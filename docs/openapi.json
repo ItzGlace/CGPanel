@@ -1,0 +1,3441 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "CGPanel Administrator and Management API",
+    "version": "0.3.0",
+    "description": "Community alpha. Session + CSRF or administrator bearer tokens. See docs/API.md for operational boundaries.",
+    "license": {
+      "name": "AGPL-3.0-or-later",
+      "url": "https://www.gnu.org/licenses/agpl-3.0.html"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Your panel HTTPS origin, normally port 2083"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "get_healthz",
+        "summary": "HTTP process health",
+        "tags": [
+          "Public"
+        ],
+        "description": "Does not check broker, DNS, containers or databases.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/login": {
+      "post": {
+        "operationId": "post_api_login",
+        "summary": "Sign in",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Sets cg_session cookie for eight hours and returns csrf. Login throttling applies.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              },
+              "example": {
+                "username": "admin",
+                "password": "YOUR_PASSWORD"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "get_api_me",
+        "summary": "Current identity",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Returns id, username, role and csrf. Bearer csrf is empty.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Identity"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "operationId": "post_api_logout",
+        "summary": "End browser session",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Session and CSRF only. Does not revoke API tokens.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "example": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/password": {
+      "post": {
+        "operationId": "post_api_password",
+        "summary": "Change own password",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Session and CSRF only. Requires current password; new password 14–256 characters. Revokes all own sessions and API tokens.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "current": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "current",
+                  "password"
+                ]
+              },
+              "example": {
+                "current": "CURRENT_PASSWORD",
+                "password": "NEW_PASSWORD"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/system": {
+      "get": {
+        "operationId": "get_api_admin_system",
+        "summary": "Administrator system overview",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. Version, resource counts, recent events and broker host health.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/System"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/audit": {
+      "get": {
+        "operationId": "get_api_admin_audit",
+        "summary": "Paginated audit events",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. Events in descending ID order. Pass next_before as before until null. Includes token IDs for bearer mutations.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "next_before": {
+                      "type": "integer",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–200, defaults to 50",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Exclusive positive event ID cursor",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/api/admin/tokens": {
+      "get": {
+        "operationId": "get_api_admin_tokens",
+        "summary": "List own API token metadata",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator session only. Latest 200 records; no secret or hash. Expired and revoked records remain visible.",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TokenMetadata"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_admin_tokens",
+        "summary": "Create administrator API token",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator session and CSRF only. Secret shown once. At most 20 active tokens, 1–90 days; account and token CIDRs both apply. Defaults: read scope, 30 days, no extra IP filter.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenSecret"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenCreate"
+              },
+              "example": {
+                "name": "reporting",
+                "scope": "read",
+                "expires_days": 30,
+                "allowed_ips": [
+                  "203.0.113.10/32"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/tokens/{id}": {
+      "delete": {
+        "operationId": "delete_api_admin_tokens_id",
+        "summary": "Revoke own API token",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator session and CSRF only. Idempotent for an existing own token. Does not cancel in-flight requests or queued jobs.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/admin/openapi.json": {
+      "get": {
+        "operationId": "get_api_admin_openapi_json",
+        "summary": "Download OpenAPI contract",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. Same contract checked into docs/openapi.json.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "get_api_docs",
+        "summary": "List accessible documentation",
+        "tags": [
+          "Documentation"
+        ],
+        "description": "Tenant guides for all signed-in users; additional API/operations guides for administrators.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "slug": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/docs/{slug}": {
+      "get": {
+        "operationId": "get_api_docs_slug",
+        "summary": "Read bundled guide",
+        "tags": [
+          "Documentation"
+        ],
+        "description": "Known slugs: getting-started, features; admin only: operations, api, reference. Returns sanitized HTML and original Markdown.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "slug": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "html": {
+                      "type": "string"
+                    },
+                    "markdown": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/overview": {
+      "get": {
+        "operationId": "get_api_overview",
+        "summary": "Workspace overview",
+        "tags": [
+          "Resources"
+        ],
+        "description": "Own counts/events for tenants; all counts/events and host health for administrators.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/System"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "operationId": "get_api_users",
+        "summary": "List accounts",
+        "tags": [
+          "Accounts"
+        ],
+        "description": "Administrator only. Includes disabled accounts; no password hashes.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_users",
+        "summary": "Create tenant account",
+        "tags": [
+          "Accounts"
+        ],
+        "description": "Administrator only. Always creates role user. quota defaults to 10 and is clamped 1–100 per resource kind. allowed_ips is up to 32 CIDRs.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              },
+              "example": {
+                "username": "site_owner",
+                "password": "REPLACE_WITH_PRIVATE_PASSWORD",
+                "quota": 10,
+                "allowed_ips": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{id}": {
+      "post": {
+        "operationId": "post_api_users_id",
+        "summary": "Replace tenant access settings",
+        "tags": [
+          "Accounts"
+        ],
+        "description": "Administrator only, cannot change administrator accounts. Send enabled/quota/allowed_ips together; omitted values reset to true/10/[]. Optional nonempty password resets tenant password. Revokes sessions. Does not stop workloads.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              },
+              "example": {
+                "enabled": true,
+                "quota": 20,
+                "allowed_ips": [
+                  "203.0.113.0/24"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resources/{kind}": {
+      "get": {
+        "operationId": "get_api_resources_kind",
+        "summary": "List resources",
+        "tags": [
+          "Resources"
+        ],
+        "description": "Kinds: apps, domains, databases, dns, schedules, backups (legacy), blocks. Administrator sees all owners; tenant sees own. Passwords and app environment are not returned.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Resource"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "apps",
+                "domains",
+                "databases",
+                "dns",
+                "schedules",
+                "backups",
+                "blocks"
+              ]
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_api_resources_kind",
+        "summary": "Create managed resource",
+        "tags": [
+          "Resources"
+        ],
+        "description": "Use the request schema matching kind. Optional owner selects an active tenant for administrators; otherwise caller. Links must have same owner. New root domains and IP blocks require admin. See resource examples below.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceCreated"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "apps",
+                "domains",
+                "databases",
+                "dns",
+                "schedules",
+                "backups",
+                "blocks"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceCreate"
+              },
+              "example": {
+                "owner": "TENANT_ID",
+                "name": "website",
+                "runtime": "php",
+                "mode": "web",
+                "command": "",
+                "env": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resource/{id}": {
+      "delete": {
+        "operationId": "delete_api_resource_id",
+        "summary": "Delete a resource",
+        "tags": [
+          "Resources"
+        ],
+        "description": "Owner or admin; blocks require admin. Remove linked resources first. Deleting an app retains workspace files; database deletion removes its data. Inspect dependencies and backups first.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/resource/{id}/{action}": {
+      "post": {
+        "operationId": "post_api_resource_id_action",
+        "summary": "Run resource action",
+        "tags": [
+          "Resources"
+        ],
+        "description": "Apps: start, stop, restart, logs, inspect, terminal, files, read, write. Databases: access. Schedules: status. Legacy workspace backups: restore. Domains: tls (legacy synchronous path; use a TLS job). All use POST, including reads, so read-only bearer tokens cannot call them. See action payload table below.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "example": {
+                "command": "id"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/integrations": {
+      "get": {
+        "operationId": "get_api_v2_integrations",
+        "summary": "List redacted integrations",
+        "tags": [
+          "Integrations"
+        ],
+        "description": "Own account unless administrator supplies owner. Secrets omitted; secret-set metadata is returned.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "query",
+            "description": "Administrator only: tenant ID. Omit to use the authenticated caller; not an all-tenant query.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_api_v2_integrations",
+        "summary": "Create or edit integration",
+        "tags": [
+          "Integrations"
+        ],
+        "description": "Supply id to edit. Creation requires type-specific credentials. Blank secret fields preserve existing values. At most 40 per owner. Referenced/locked proxies cannot be freely changed by tenants.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationSave"
+              },
+              "example": {
+                "owner": "TENANT_ID",
+                "name": "alerts",
+                "type": "telegram",
+                "token": "BOT_TOKEN",
+                "chat_id": "CHAT_ID",
+                "proxy_id": ""
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/integrations/{id}": {
+      "delete": {
+        "operationId": "delete_api_v2_integrations_id",
+        "summary": "Delete integration",
+        "tags": [
+          "Integrations"
+        ],
+        "description": "Own account unless owner supplied by admin. Remove dependent monitor/backup/proxy references first.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "description": "Administrator only: tenant ID. Omit to use the authenticated caller; not an all-tenant query.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v2/jobs": {
+      "get": {
+        "operationId": "get_api_v2_jobs",
+        "summary": "List background jobs",
+        "tags": [
+          "Jobs"
+        ],
+        "description": "Latest 100 accessible jobs, newest first. Admin sees all; tenant sees own. There is no individual-job GET endpoint.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Job"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v2_jobs",
+        "summary": "Submit background operation",
+        "tags": [
+          "Jobs"
+        ],
+        "description": "Flat kind/target payload. Supported types and examples below. No idempotency keys. At most 10 pending ordinary jobs per account. owner is needed for admin integration_test/backup_deliver on tenant objects; resource jobs infer it. panel_tls requires admin.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Queued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobSubmission"
+              },
+              "example": {
+                "kind": "full_backup",
+                "target": "APP_ID",
+                "database_ids": [
+                  "DATABASE_ID"
+                ],
+                "destinations": [],
+                "quiesce": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/jobs/{id}/retry": {
+      "post": {
+        "operationId": "post_api_v2_jobs_id_retry",
+        "summary": "Retry failed or interrupted job",
+        "tags": [
+          "Jobs"
+        ],
+        "description": "Returns a new job ID. restore_full, tls, panel_tls and egress cannot use automatic retry; review and submit a fresh request. Original permissions/ownership apply.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Queued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v2/cron-preview": {
+      "post": {
+        "operationId": "post_api_v2_cron_preview",
+        "summary": "Preview next five cron occurrences",
+        "tags": [
+          "Scheduling"
+        ],
+        "description": "Five numeric fields or hourly/daily/weekly aliases. Optional IANA timezone, UTC by default. Returns Unix seconds. POST requires admin-scope token or session CSRF.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "next": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Cron"
+              },
+              "example": {
+                "schedule": "0 3 * * *",
+                "timezone": "Asia/Tehran"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/backup-plans": {
+      "get": {
+        "operationId": "get_api_v2_backup_plans",
+        "summary": "List automatic backup plans",
+        "tags": [
+          "Backups"
+        ],
+        "description": "Tenant sees own; admin sees all. Includes config, enabled, next_run and last_job.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v2_backup_plans",
+        "summary": "Create automatic backup plan",
+        "tags": [
+          "Backups"
+        ],
+        "description": "Owner inferred from app. At most 20 per owner. retention defaults 7, clamped 1–30; applies locally after successful delivery. No update endpoint: remove and recreate a plan.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupPlan"
+              },
+              "example": {
+                "app_id": "APP_ID",
+                "database_ids": [
+                  "DATABASE_ID"
+                ],
+                "destinations": [
+                  "STORAGE_ID"
+                ],
+                "schedule": "0 3 * * *",
+                "timezone": "UTC",
+                "quiesce": true,
+                "retention": 7,
+                "enabled": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/backup-plans/{id}": {
+      "delete": {
+        "operationId": "delete_api_v2_backup_plans_id",
+        "summary": "Remove automatic backup plan",
+        "tags": [
+          "Backups"
+        ],
+        "description": "Removes an accessible schedule, not its existing archives.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v2/backups": {
+      "get": {
+        "operationId": "get_api_v2_backups",
+        "summary": "List full .cgp archives",
+        "tags": [
+          "Backups"
+        ],
+        "description": "Account scoped. Unlike legacy resources/backups, these contain selected SQL and configuration metadata.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "query",
+            "description": "Administrator only: tenant ID. Omit to use the authenticated caller; not an all-tenant query.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v2/backups/{id}": {
+      "delete": {
+        "operationId": "delete_api_v2_backups_id",
+        "summary": "Delete local full archive",
+        "tags": [
+          "Backups"
+        ],
+        "description": "Account scoped. Removes local archive; remote copies are not removed.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "description": "Administrator only: tenant ID. Omit to use the authenticated caller; not an all-tenant query.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v2/backups/{id}/download": {
+      "get": {
+        "operationId": "get_api_v2_backups_id_download",
+        "summary": "Download .cgp archive",
+        "tags": [
+          "Backups"
+        ],
+        "description": "Account scoped authenticated binary ZIP download. Contains secrets. Use a private destination file.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "description": "Administrator only: tenant ID. Omit to use the authenticated caller; not an all-tenant query.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v2/monitor/{id}": {
+      "get": {
+        "operationId": "get_api_v2_monitor_id",
+        "summary": "Read website monitoring",
+        "tags": [
+          "Monitoring"
+        ],
+        "description": "Domain ID; owner/admin only. Settings, latest 120 checks and 24-hour totals. Analytics tracking key is included.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_api_v2_monitor_id",
+        "summary": "Replace monitoring configuration",
+        "tags": [
+          "Monitoring"
+        ],
+        "description": "Domain ID. Send complete configuration. Two failed probes open an outage. Interval 60–3600 seconds; retention 1–30 days. Telegram integration must belong to domain owner.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Monitor"
+              },
+              "example": {
+                "enabled": true,
+                "scheme": "https",
+                "path": "/",
+                "interval": 60,
+                "telegram_id": "",
+                "analytics": true,
+                "clicks": true,
+                "retention_days": 30
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/analytics/{id}": {
+      "get": {
+        "operationId": "get_api_v2_analytics_id",
+        "summary": "Read website analytics and heatmap",
+        "tags": [
+          "Monitoring"
+        ],
+        "description": "Domain ID; owner/admin. Data within configured retention, at most 30 days. daily, pages, heatmap, targets and referrers. IPs are site/day salted hashes, not raw addresses.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Page path for heatmap, defaults to most viewed page",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewport",
+            "in": "query",
+            "description": "desktop (default) or mobile",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "desktop",
+                "mobile"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/api/v2/domains/{id}/tls": {
+      "get": {
+        "operationId": "get_api_v2_domains_id_tls",
+        "summary": "Certificate and renewal status",
+        "tags": [
+          "HTTPS and routing"
+        ],
+        "description": "Domain ID; owner/admin. installed, certificate, renewal_timer_active, last_renewal_run, validation and cdn.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v2/domains/{id}/zone": {
+      "get": {
+        "operationId": "get_api_v2_domains_id_zone",
+        "summary": "Download BIND DNS zone",
+        "tags": [
+          "HTTPS and routing"
+        ],
+        "description": "Domain ID; owner/admin. Import at your provider. Does not change nameservers or enable CDN.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v2/domains/{id}/cdn": {
+      "post": {
+        "operationId": "post_api_v2_domains_id_cdn",
+        "summary": "Set trusted CDN mode",
+        "tags": [
+          "HTTPS and routing"
+        ],
+        "description": "Domain ID; owner/admin. Cloudflare mode accepts visitor headers only from known provider networks.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "cloudflare"
+                    ]
+                  }
+                },
+                "required": [
+                  "provider"
+                ]
+              },
+              "example": {
+                "provider": "cloudflare"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/egress/{id}": {
+      "get": {
+        "operationId": "get_api_v2_egress_id",
+        "summary": "Read application proxy policy",
+        "tags": [
+          "HTTPS and routing"
+        ],
+        "description": "App ID; owner/admin. Change it by submitting an egress job.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "proxy_id": {
+                      "type": "string"
+                    },
+                    "locked": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "AdminBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Revocable cgp_ administrator token. read scope permits GET/HEAD only; admin permits mutations except session-only credential operations."
+      },
+      "SessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "cg_session"
+      },
+      "CsrfHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-csrf-token"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Login": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ]
+      },
+      "TokenCreate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "read",
+              "admin"
+            ]
+          },
+          "expires_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 90,
+            "default": 30
+          },
+          "allowed_ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "TokenMetadata": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "read",
+              "admin"
+            ]
+          },
+          "allowed_ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created": {
+            "type": "integer"
+          },
+          "expires": {
+            "type": "integer"
+          },
+          "last_used": {
+            "type": "integer",
+            "nullable": true
+          },
+          "revoked": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "TokenSecret": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TokenMetadata"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "token": {
+                "type": "string",
+                "description": "Returned only on creation. Store privately."
+              }
+            },
+            "required": [
+              "token"
+            ]
+          }
+        ]
+      },
+      "UserCreate": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{3,32}$"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 14,
+            "maxLength": 256
+          },
+          "quota": {
+            "type": "integer"
+          },
+          "allowed_ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ]
+      },
+      "UserUpdate": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "quota": {
+            "type": "integer"
+          },
+          "allowed_ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "user"
+            ]
+          },
+          "enabled": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "quota": {
+            "type": "integer"
+          },
+          "allowed_ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created": {
+            "type": "string"
+          }
+        }
+      },
+      "Resource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created": {
+            "type": "string"
+          }
+        }
+      },
+      "ResourceCreated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "Identity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "user"
+            ]
+          },
+          "csrf": {
+            "type": "string",
+            "description": "Empty for bearer authentication."
+          }
+        }
+      },
+      "System": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "host": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "Cron": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schedule"
+        ]
+      },
+      "Monitor": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "http",
+              "https"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "interval": {
+            "type": "integer"
+          },
+          "telegram_id": {
+            "type": "string"
+          },
+          "analytics": {
+            "type": "boolean"
+          },
+          "clicks": {
+            "type": "boolean"
+          },
+          "retention_days": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scheme",
+          "path"
+        ]
+      },
+      "BackupPlan": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "database_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "destinations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "schedule": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "quiesce": {
+            "type": "boolean"
+          },
+          "retention": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "app_id",
+          "schedule"
+        ]
+      },
+      "Job": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "interrupted"
+            ]
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "error": {
+            "type": "string"
+          },
+          "created": {
+            "type": "integer"
+          },
+          "started": {
+            "type": "integer",
+            "nullable": true
+          },
+          "finished": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "Queued": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued"
+            ]
+          }
+        }
+      },
+      "ApplicationCreate": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "python",
+              "php",
+              "node",
+              "java",
+              "rust",
+              "static"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "web",
+              "worker"
+            ]
+          },
+          "command": {
+            "type": "string"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "runtime",
+          "mode"
+        ]
+      },
+      "DomainCreate": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "DatabaseCreate": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "mysql",
+              "postgresql"
+            ]
+          },
+          "allowed_ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "engine"
+        ]
+      },
+      "DnsRecordCreate": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "domain_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CNAME",
+              "MX",
+              "TXT",
+              "NS"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "domain_id",
+          "type",
+          "value"
+        ]
+      },
+      "ScheduleCreate": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "schedule": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "app_id",
+          "schedule",
+          "command"
+        ]
+      },
+      "WorkspaceBackupCreate": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "app_id"
+        ]
+      },
+      "IpBlockCreate": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "ResourceCreate": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ApplicationCreate"
+          },
+          {
+            "$ref": "#/components/schemas/DomainCreate"
+          },
+          {
+            "$ref": "#/components/schemas/DatabaseCreate"
+          },
+          {
+            "$ref": "#/components/schemas/DnsRecordCreate"
+          },
+          {
+            "$ref": "#/components/schemas/ScheduleCreate"
+          },
+          {
+            "$ref": "#/components/schemas/WorkspaceBackupCreate"
+          },
+          {
+            "$ref": "#/components/schemas/IpBlockCreate"
+          }
+        ],
+        "description": "Choose the schema matching the kind path parameter. owner is optional for administrators; defaults to caller."
+      },
+      "ProxyIntegration": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "proxy"
+            ]
+          },
+          "proxy_id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "TelegramIntegration": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "telegram"
+            ]
+          },
+          "proxy_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "chat_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "S3Integration": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "s3"
+            ]
+          },
+          "proxy_id": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "access_key": {
+            "type": "string"
+          },
+          "secret_key": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "ca_pem": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "SshIntegration": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ssh"
+            ]
+          },
+          "proxy_id": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "remote_dir": {
+            "type": "string"
+          },
+          "private_key": {
+            "type": "string"
+          },
+          "host_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "CloudflareIntegration": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "cloudflare"
+            ]
+          },
+          "proxy_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "IntegrationSave": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ProxyIntegration"
+          },
+          {
+            "$ref": "#/components/schemas/TelegramIntegration"
+          },
+          {
+            "$ref": "#/components/schemas/S3Integration"
+          },
+          {
+            "$ref": "#/components/schemas/SshIntegration"
+          },
+          {
+            "$ref": "#/components/schemas/CloudflareIntegration"
+          }
+        ],
+        "description": "New integrations require the fields described by each type; blank secret fields preserve existing values on an edit. Send complete nonsecret configuration. Cloudflare DNS tooling uses its own direct connection."
+      },
+      "full_backupJob": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "full_backup"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "database_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "destinations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "quiesce": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ]
+      },
+      "backup_deliverJob": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "backup_deliver"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "destinations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ]
+      },
+      "restore_fullJob": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "restore_full"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "backup_id": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "string",
+            "enum": [
+              "RESTORE"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ]
+      },
+      "integration_testJob": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "integration_test"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ]
+      },
+      "tlsJob": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tls"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "validation": {
+            "type": "string",
+            "enum": [
+              "http",
+              "dns_local",
+              "dns_cloudflare"
+            ]
+          },
+          "integration_id": {
+            "type": "string"
+          },
+          "agree_tos": {
+            "type": "boolean"
+          },
+          "staging": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ]
+      },
+      "panel_tlsJob": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "panel_tls"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "agree_tos": {
+            "type": "boolean"
+          },
+          "staging": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ]
+      },
+      "seoJob": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "seo"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "http",
+              "https"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ]
+      },
+      "egressJob": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "egress"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "proxy_id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ]
+      },
+      "JobSubmission": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/full_backupJob"
+          },
+          {
+            "$ref": "#/components/schemas/backup_deliverJob"
+          },
+          {
+            "$ref": "#/components/schemas/restore_fullJob"
+          },
+          {
+            "$ref": "#/components/schemas/integration_testJob"
+          },
+          {
+            "$ref": "#/components/schemas/tlsJob"
+          },
+          {
+            "$ref": "#/components/schemas/panel_tlsJob"
+          },
+          {
+            "$ref": "#/components/schemas/seoJob"
+          },
+          {
+            "$ref": "#/components/schemas/egressJob"
+          }
+        ],
+        "description": "Flat payload. Required job-specific fields are validated during execution; an accepted job can still fail. Never place integration secrets here."
+      }
+    }
+  },
+  "externalDocs": {
+    "url": "https://github.com/ItzGlace/CGPanel/blob/main/docs/API.md"
+  }
+}

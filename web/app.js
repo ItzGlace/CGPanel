@@ -1,4 +1,5 @@
 import { features } from "/features.js";
+import { documentation } from "/documentation.js";
 import { icon as glyph } from "/icons.js";
 ("use strict");
 const $ = (q, root = document) => root.querySelector(q);
@@ -17,6 +18,16 @@ let me,
   csrf = "",
   pending = false;
 const pages = {
+  docs: [
+    "Documentation",
+    "Guides for building, operating, and automating your workspace.",
+    "folder-code",
+  ],
+  "admin-api": [
+    "Admin API",
+    "Endpoint reference and secure access for administrator automation.",
+    "terminal",
+  ],
   monitoring: [
     "Website monitoring",
     "Availability, response times, and Telegram alerts.",
@@ -201,8 +212,9 @@ function nav() {
     "egress",
     "jobs",
     "security",
-    ...(me.role === "admin" ? ["users", "blocks"] : []),
+    ...(me.role === "admin" ? ["users", "blocks", "admin-api"] : []),
     "audit",
+    "docs",
   ];
   $("#nav").innerHTML = keys
     .map(
@@ -269,6 +281,8 @@ async function render() {
     else if (current === "terminal" || current === "files")
       await workspace(current);
     else if (current === "settings") settings();
+    else if (current === "docs" || current === "admin-api")
+      await docs.render(current);
     else if (
       [
         "monitoring",
@@ -982,7 +996,7 @@ async function auditPage() {
 }
 function settings() {
   $("#content").innerHTML =
-    `<div class="grid-two grid items-start gap-5 lg:grid-cols-2"><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Your account</h3><p><b>${esc(me.username)}</b> · ${esc(me.role)}</p><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" id="change-password">Change password</button></div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Current session</h3><p>Sessions expire after eight hours. Password changes revoke all your sessions.</p><button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="logout">Sign out</button></div></div>`;
+    `<div class="grid-two grid items-start gap-5 lg:grid-cols-2"><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Your account</h3><p><b>${esc(me.username)}</b> · ${esc(me.role)}</p><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" id="change-password">Change password</button></div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Current session</h3><p>Sessions expire after eight hours. Password changes revoke all your sessions and API tokens.</p><button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="logout">Sign out</button></div></div>`;
   $("#logout").onclick = async () => {
     await api("/logout", "POST", {});
     showLogin();
@@ -1014,6 +1028,17 @@ const extra = features({
   input,
   textarea,
   select,
+  toast,
+  getMe: () => me,
+  getCurrent: () => current,
+});
+const docs = documentation({
+  api,
+  esc,
+  modal,
+  input,
+  select,
+  textarea,
   toast,
   getMe: () => me,
   getCurrent: () => current,

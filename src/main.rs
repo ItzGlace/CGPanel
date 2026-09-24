@@ -25,6 +25,8 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
+mod admin_api;
+mod documentation;
 mod monitoring;
 mod v2;
 
@@ -42,6 +44,8 @@ struct Identity {
     username: String,
     role: String,
     csrf: String,
+    #[serde(skip)]
+    api_token: Option<String>,
 }
 #[derive(Debug)]
 struct Error(StatusCode, String);
@@ -132,6 +136,17 @@ async fn host(
 }
 
 async fn authenticate(State(app): State<App>, mut req: Request, next: Next) -> Response {
+    // An explicit Authorization header never falls back to a browser cookie.
+    if req.headers().contains_key(header::AUTHORIZATION) {
+        let token_request = admin_api::TokenRequest::from_request(&req);
+        return match admin_api::authenticate_token(&app, token_request).await {
+            Ok(identity) => {
+                req.extensions_mut().insert(identity);
+                next.run(req).await
+            }
+            Err(error) => error.into_response(),
+        };
+    }
     let cookie = req
         .headers()
         .get(header::COOKIE)
@@ -173,6 +188,7 @@ async fn authenticate(State(app): State<App>, mut req: Request, next: Next) -> R
         username: row.get("username"),
         role: row.get("role"),
         csrf: row.get("csrf"),
+        api_token: None,
     };
     if req.method() != "GET"
         && req
@@ -827,6 +843,10 @@ async fn change_password(
         .execute(&app.db)
         .await?;
     audit(&app, &user.id, "password:changed", &user.id).await;
+    sqlx::query("UPDATE api_tokens SET revoked=unixepoch() WHERE user_id=? AND revoked IS NULL")
+        .bind(&user.id)
+        .execute(&app.db)
+        .await?;
     Ok(Json(json!({"ok":true})))
 }
 
@@ -888,6 +908,8 @@ async fn main() -> anyhow::Result<()> {
     monitoring::start(app.clone());
     v2::start_plans(app.clone());
     let api = Router::new()
+        .merge(admin_api::routes())
+        .merge(documentation::routes())
         .merge(v2::routes())
         .merge(monitoring::routes())
         .route("/me", get(me))
@@ -946,6 +968,15 @@ async fn main() -> anyhow::Result<()> {
             }),
         )
         .route("/assets/{*path}", get(asset))
+        .route(
+            "/documentation.js",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("../web/documentation.js"),
+                )
+            }),
+        )
         .route("/healthz", get(|| async { Json(json!({"status":"ok"})) }))
         .route("/api/login", post(login))
         .nest("/api", api)

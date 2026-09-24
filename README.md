@@ -4,7 +4,19 @@
 
 CGPanel brings websites, APIs, Telegram bots, databases, and hosting tools into a familiar category-based dashboard. It is an independent project, with an original interface inspired by traditional hosting panels. It is not affiliated with cPanel.
 
-> **Version 0.2 is a development alpha, not a complete cPanel replacement.** Use a dedicated development server. Do not entrust production tenants or irreplaceable data to this release without further security review, operational testing, and off-server backups.
+> **Version 0.3 is a development alpha, not a complete cPanel replacement.** Use a dedicated development server. Do not entrust production tenants or irreplaceable data to this release without further security review, operational testing, and off-server backups.
+
+## Documentation and administrator API
+
+Start with the **[documentation index](docs/README.md)**, [getting started guide](docs/GETTING-STARTED.md), or [administrator operations guide](docs/OPERATIONS.md). The same guides are bundled in the panel under **Documentation**.
+
+Administrators can use **Admin API** to search endpoints, copy curl examples, download the OpenAPI contract and create/revoke automation tokens. Tokens have read-only or full-admin scope, 1–90 day expiry and optional source CIDRs. The secret is returned once and stored only as a hash. Token management requires an administrator session with CSRF; bearer tokens cannot create more credentials.
+
+- [API authentication and curl/Python examples](docs/API.md)
+- [Complete endpoint reference](docs/API-REFERENCE.md)
+- [OpenAPI JSON for API clients](docs/openapi.json)
+
+Core administrator endpoints include `GET /api/admin/system`, `GET /api/admin/audit`, `GET/POST /api/admin/tokens`, `DELETE /api/admin/tokens/{id}` and `GET /api/admin/openapi.json`. Existing account, application, domain, database, monitoring and backup endpoints accept scoped administrator tokens too. Never publish a real token in an issue or repository.
 
 ## Working features
 
@@ -98,7 +110,7 @@ The zone editor updates this server's authoritative BIND service. Registrar dele
 
 See [SECURITY.md](SECURITY.md) and [docs/ROADMAP.md](docs/ROADMAP.md). Specific limits:
 
-- This is not complete cPanel/WHM feature parity. Mail hosting, FTP/SFTP account management, resellers, migration, WordPress tooling, database GUI/query tools, MFA, API tokens, and ModSecurity/Coraza WAF integration are future work.
+- This is not complete cPanel/WHM feature parity. Mail hosting, FTP/SFTP account management, resellers, migration, WordPress tooling, database GUI/query tools, MFA, tenant API tokens, fine-grained delegated roles, and ModSecurity/Coraza WAF integration are future work.
 - Nginx and firewall controls reduce some abusive traffic; they cannot prevent upstream bandwidth saturation. Arrange provider/CDN DDoS protection separately.
 - Workspaces have resource-count quotas but **no disk or inode quotas**. Container images and backup archives also consume shared disk. Trusted development tenants only.
 - The terminal is a bounded command console, not an interactive PTY. Commands have a 25-second limit and captured output is bounded.

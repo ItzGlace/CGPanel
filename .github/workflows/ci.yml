@@ -20,5 +20,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
+      - run: cargo build --locked --bin cgpanel && python3 tests/admin_api.py
       - run: python3 -m py_compile tests/*.py deploy/install-rclone.py
+      - run: python3 scripts/build_api_docs.py --check
       - run: bash -n deploy/install.sh deploy/install-features.sh deploy/upgrade-v0.2.sh deploy/reload-nginx

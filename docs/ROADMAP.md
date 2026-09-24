@@ -5,7 +5,7 @@ This list records missing work, not available features.
 1. Independent threat modeling, broker review, penetration testing, security update policy, and signed releases.
 2. Crash-safe provisioning journal, idempotent reconciliation, resource editing, health supervision, failure rollback, and a tested uninstall/upgrade path.
 3. Project and tenant disk/inode quotas, aggregate resource limits, storage alerts, image digest pinning, image management, and image scanning.
-4. MFA/WebAuthn, scoped API tokens, session inventory, password recovery, and delegated administrator roles.
+4. MFA/WebAuthn, tenant API tokens, finer per-operation scopes, session inventory, password recovery, and delegated administrator roles. Administrator read/full tokens are available from v0.3.
 5. Container runtime settings, rolling deployments, Git deploy keys/webhooks, environment secret rotation, interactive PTY sessions, and long-running package jobs.
 6. SQL GUI integration, user/grant editing, certificate distribution, local application database proxying, archive encryption, cross-server restore/import, and remote retention management. Version 0.2 supplies logical database dumps/restores, local retention, and scheduled off-server backups.
 7. WAF integration, security event dashboards, provider/CDN integrations, and operator-tested incident workflows.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 — 2026-09-24
+
+- Bundled Documentation page with tenant setup, administrator operations and API guides; GitHub documentation index and troubleshooting instructions.
+- Administrator API center with 41 searchable operations, request examples, response schemas, curl snippets and an OpenAPI 3.0 download.
+- Administrator bearer tokens with read/full scope, 1–90 day expiry, optional CIDR restrictions, hash-only storage, usage timestamps and revocation. Session-only credential management and password-change revocation protect the token lifecycle.
+- Administrator system overview and cursor-paginated audit endpoints. Existing management endpoints accept authorized bearer requests.
+- A single generator maintains the endpoint reference and OpenAPI contract; CI checks generated documentation for drift. Dedicated-host tests verify scope, IP restrictions, expiry, revocation, secret handling, sessions and tenant denial.
+
 ## 0.2.0 — 2026-09-24
 
 This development alpha adds website observability, portable backups and per-application proxy routing to the Rust hosting panel.

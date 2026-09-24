@@ -1,6 +1,8 @@
 # Security policy
 
-CGPanel 0.2 is development software and has not been independently audited. Use trusted development tenants on a dedicated host.
+CGPanel 0.3 is development software and has not been independently audited. Use trusted development tenants on a dedicated host.
+
+Administrator API tokens are random bearer credentials stored only as SHA-256 hashes, with expiry, revocation and optional CIDR restrictions in addition to the account's IP rules. Token management requires session authentication and CSRF. Read-only means GET/HEAD only, not public or nonsensitive data: backup downloads remain readable. Full-admin tokens can perform destructive tenant operations and execute commands inside tenant containers. Tokens cannot mint credentials or change the administrator's password. Changing that password revokes existing sessions and tokens. No token bypasses resource ownership checks or provides a general root shell. Protect the panel database, browser sessions and any token secret copied into an automation system.
 
 Do not publish exploit details, credentials, or tenant data in public issues. Use the repository owner's private security advisory facility to report a vulnerability; if that is unavailable, request a private contact without including exploit details. The project's maintainers must establish a supported release and disclosure process before production use.
 

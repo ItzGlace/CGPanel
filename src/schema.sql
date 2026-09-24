@@ -47,3 +47,10 @@ CREATE TABLE IF NOT EXISTS backup_plans (
  config TEXT NOT NULL, next_run INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
  last_job TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS api_tokens (
+ id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), name TEXT NOT NULL,
+ token_hash TEXT UNIQUE NOT NULL, prefix TEXT NOT NULL,
+ scope TEXT NOT NULL CHECK(scope IN ('read','admin')), allowed_ips TEXT NOT NULL DEFAULT '[]',
+ created INTEGER NOT NULL, expires INTEGER NOT NULL, last_used INTEGER, revoked INTEGER
+);
+CREATE INDEX IF NOT EXISTS api_tokens_user ON api_tokens(user_id,created);
