@@ -1,0 +1,4 @@
+FROM public.ecr.aws/docker/library/ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends iptables ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY cgpanel-egress /usr/local/bin/cgpanel-egress
+ENTRYPOINT ["/usr/local/bin/cgpanel-egress"]

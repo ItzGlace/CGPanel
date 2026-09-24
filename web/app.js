@@ -1,3 +1,4 @@
+import { features } from "/features.js";
 import { icon as glyph } from "/icons.js";
 ("use strict");
 const $ = (q, root = document) => root.querySelector(q);
@@ -16,6 +17,42 @@ let me,
   csrf = "",
   pending = false;
 const pages = {
+  monitoring: [
+    "Website monitoring",
+    "Availability, response times, and Telegram alerts.",
+    "activity",
+  ],
+  analytics: [
+    "Website analytics",
+    "Daily unique IPs, popular pages, and click hotspots.",
+    "activity",
+  ],
+  integrations: [
+    "Integrations",
+    "Connect Telegram, S3, SSH, Cloudflare, and SOCKS5.",
+    "network",
+  ],
+  "backup-center": [
+    "Full backups",
+    "Portable .cgp archives and scheduled off-site delivery.",
+    "archive",
+  ],
+  certificates: [
+    "Certificates & CDN",
+    "Let\u2019s Encrypt, automatic renewal, and DNS zone exports.",
+    "lock-keyhole",
+  ],
+  egress: [
+    "Outgoing traffic",
+    "Route application traffic through an isolated SOCKS5 gateway.",
+    "shield-check",
+  ],
+  jobs: [
+    "Background jobs",
+    "Track long-running operations and delivery results.",
+    "clock-3",
+  ],
+
   home: [
     "Overview",
     "Everything you need to build, deploy, and keep things running.",
@@ -156,7 +193,13 @@ function nav() {
     "files",
     "terminal",
     "schedules",
-    "backups",
+    "backup-center",
+    "monitoring",
+    "analytics",
+    "certificates",
+    "integrations",
+    "egress",
+    "jobs",
     "security",
     ...(me.role === "admin" ? ["users", "blocks"] : []),
     "audit",
@@ -164,7 +207,7 @@ function nav() {
   $("#nav").innerHTML = keys
     .map(
       (k, i) =>
-        `<a href="#${k}" data-nav="${k}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-[12px] text-emerald-50/50 transition hover:bg-white/5 hover:text-white [&.active]:bg-mint/10 [&.active]:text-mint ${i === 9 ? "nav-group mt-5 border-t border-white/10 pt-5" : ""}"><span class="nav-icon">${glyph(pages[k][2], "size-[18px]")}</span>${pages[k][0]}</a>`,
+        `<a href="#${k}" data-nav="${k}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-[12px] text-emerald-50/50 transition motion-reduce:transition-none hover:bg-white/5 hover:text-white [&.active]:bg-mint/10 [&.active]:text-mint ${i === 9 ? "nav-group mt-5 border-t border-white/10 pt-5" : ""}"><span class="nav-icon">${glyph(pages[k][2], "size-[18px]")}</span>${pages[k][0]}</a>`,
     )
     .join("");
 }
@@ -226,6 +269,18 @@ async function render() {
     else if (current === "terminal" || current === "files")
       await workspace(current);
     else if (current === "settings") settings();
+    else if (
+      [
+        "monitoring",
+        "analytics",
+        "integrations",
+        "backup-center",
+        "certificates",
+        "egress",
+        "jobs",
+      ].includes(current)
+    )
+      await extra.render(current);
     else if (current === "users") await usersPage();
     else await resourcePage(current);
   } catch (e) {
@@ -234,7 +289,7 @@ async function render() {
   }
 }
 const tool = (page, title, subtitle, icon) =>
-  `<a class="tool group flex items-center gap-3 rounded-lg p-3 text-left transition hover:bg-[#f3f7f0] [&_strong]:block [&_strong]:text-[11px] [&_strong]:font-medium [&_small]:mt-1 [&_small]:block [&_small]:text-[10px] [&_small]:text-slate-400" href="#${page}"><span class="tool-icon flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/70 bg-white text-emerald-700/70 transition group-hover:border-emerald-200 group-hover:bg-white group-hover:text-emerald-700">${glyph(pages[page][2], "size-5")}</span><span><strong>${title}</strong><small>${subtitle}</small></span></a>`;
+  `<a class="tool group flex items-center gap-3 rounded-lg p-3 text-left transition motion-reduce:transition-none hover:bg-[#f3f7f0] [&_strong]:block [&_strong]:text-[11px] [&_strong]:font-medium [&_small]:mt-1 [&_small]:block [&_small]:text-[10px] [&_small]:text-slate-400" href="#${page}"><span class="tool-icon flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/70 bg-white text-emerald-700/70 transition group-hover:border-emerald-200 group-hover:bg-white group-hover:text-emerald-700">${glyph(pages[page][2], "size-5")}</span><span><strong>${title}</strong><small>${subtitle}</small></span></a>`;
 function toolGroup(title, items) {
   return `<section class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs"><div class="card-head flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_small]:text-[9px] [&_small]:font-medium [&_small]:tracking-wider [&_small]:text-slate-400"><h3>${title}</h3><small>${items.length} TOOLS</small></div><div class="tools-grid grid grid-cols-1 gap-1 p-3 sm:grid-cols-3">${items.map((i) => tool(...i)).join("")}</div></section>`;
 }
@@ -259,27 +314,34 @@ async function dashboard() {
     ]
       .map(
         ([label, n, sub, icon]) =>
-          `<div class="stat group rounded-xl border border-slate-200/70 bg-white p-5 shadow-xs transition hover:border-emerald-200"><div class="stat-label flex items-center justify-between text-[11px] font-medium text-slate-400 [&_i]:rounded-lg [&_i]:bg-[#f1f5ee] [&_i]:p-2 [&_i]:text-emerald-700/70">${label}<i>${glyph(icon, "size-5")}</i></div><div class="stat-number mb-1 mt-3 text-[32px] font-medium leading-tight tracking-tight text-slate-800">${n}</div><small class="text-[10px] text-slate-400">${sub}</small></div>`,
+          `<div class="stat group rounded-xl border border-slate-200/70 bg-white p-5 shadow-xs motion-safe:animate-enter transition motion-reduce:transition-none hover:border-emerald-200"><div class="stat-label flex items-center justify-between text-[11px] font-medium text-slate-400 [&_i]:rounded-lg [&_i]:bg-[#f1f5ee] [&_i]:p-2 [&_i]:text-emerald-700/70">${label}<i>${glyph(icon, "size-5")}</i></div><div class="stat-number mb-1 mt-3 text-[32px] font-medium leading-tight tracking-tight text-slate-800">${n}</div><small class="text-[10px] text-slate-400">${sub}</small></div>`,
       )
       .join(
         "",
-      )}</div><div class="dashboard-grid grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_280px]"><div><div class="welcome-card relative mb-6 flex min-h-56 items-center overflow-hidden rounded-xl bg-forest p-6 text-white sm:p-7 [&_h2]:relative [&_h2]:z-10 [&_h2]:mb-3 [&_h2]:max-w-80 [&_h2]:text-[25px] [&_h2]:font-medium [&_h2]:tracking-tight [&_p]:relative [&_p]:z-10 [&_p]:text-xs [&_p]:leading-6 [&_p]:text-emerald-50/45 [&_.eyebrow]:text-mint [&_a]:relative [&_a]:z-10"><div><div class="eyebrow mb-2 text-[9px] font-semibold tracking-[.18em] text-slate-400">BUILD SOMETHING GREAT</div><h2>Welcome back, ${esc(me.username)}.</h2><p>Your next website, API, or bot starts here.<br>Give your ideas a place to grow.</p><a href="#apps" class="mt-5 inline-flex items-center gap-3 rounded-lg bg-mint px-4 py-2.5 text-xs font-medium text-forest transition hover:bg-lime-200"><img class="size-6 object-contain" src="/assets/deploy.png" alt="">Deploy an application ${glyph("arrow-up-right", "size-4")}</a></div><img class="hidden sm:block absolute -right-5 top-0 size-52 object-contain opacity-90 sm:right-0 sm:size-60" src="/assets/deploy.png" alt=""></div><input id="tool-search" class="search-tools mb-6 w-full rounded-xl border border-slate-200/70 bg-white px-5 py-3.5 text-xs outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50" placeholder="Search your tools — domains, databases, terminal…" aria-label="Find a tool">${toolGroup(
+      )}</div><div class="dashboard-grid grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_280px]"><div><div class="welcome-card relative mb-6 flex min-h-56 items-center overflow-hidden rounded-xl bg-forest p-6 text-white sm:p-7 [&_h2]:relative [&_h2]:z-10 [&_h2]:mb-3 [&_h2]:max-w-80 [&_h2]:text-[25px] [&_h2]:font-medium [&_h2]:tracking-tight [&_p]:relative [&_p]:z-10 [&_p]:text-xs [&_p]:leading-6 [&_p]:text-emerald-50/45 [&_.eyebrow]:text-mint [&_a]:relative [&_a]:z-10"><div><div class="eyebrow mb-2 text-[9px] font-semibold tracking-[.18em] text-slate-400">BUILD SOMETHING GREAT</div><h2>Welcome back, ${esc(me.username)}.</h2><p>Your next website, API, or bot starts here.<br>Give your ideas a place to grow.</p><a href="#apps" class="mt-5 inline-flex items-center gap-3 rounded-lg bg-mint px-4 py-2.5 text-xs font-medium text-forest transition motion-reduce:transition-none hover:bg-lime-200"><img class="size-6 object-contain" src="/assets/deploy.png" alt="">Deploy an application ${glyph("arrow-up-right", "size-4")}</a></div><img class="hidden sm:block absolute -right-5 top-0 size-52 object-contain opacity-90 sm:right-0 sm:size-60" src="/assets/deploy.png" alt=""></div><input id="tool-search" class="search-tools mb-6 w-full rounded-xl border border-slate-200/70 bg-white px-5 py-3.5 text-xs outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50" placeholder="Search your tools — domains, databases, terminal…" aria-label="Find a tool">${toolGroup(
       "Applications & files",
       [
         ["apps", "Application manager", "Deploy websites & bots"],
         ["files", "File manager", "Browse your workspace"],
         ["terminal", "Terminal", "Packages & commands"],
-        ["backups", "Backup manager", "Snapshots & recovery"],
+        ["backup-center", "Full backups", "Files, SQL & remote storage"],
         ["schedules", "Scheduled tasks", "Automate your work"],
         ["apps", "Runtime catalog", "Python, PHP, Java & more"],
       ],
     )}${toolGroup("Domains & databases", [
       ["domains", "Domains", "Assign & connect"],
       ["dns", "DNS zone editor", "A, AAAA, MX, TXT & more"],
-      ["domains", "SSL / TLS", "Certificates & HTTPS"],
+      ["certificates", "SSL / TLS & CDN", "Certificates & DNS export"],
       ["databases", "MySQL databases", "Create & manage"],
       ["databases", "PostgreSQL databases", "SQL for your apps"],
       ["databases", "Remote database access", "Control access by IP"],
+    ])}${toolGroup("Monitoring & automation", [
+      ["monitoring", "Website monitoring", "Uptime & Telegram alerts"],
+      ["analytics", "Website analytics", "Visitors, heatmaps & SEO"],
+      ["integrations", "Integrations", "Telegram, S3 & SSH"],
+      ["egress", "Outgoing traffic", "Application SOCKS routing"],
+      ["jobs", "Background jobs", "Progress & delivery results"],
+      ["backups", "Legacy snapshots", "Workspace-only archives"],
     ])}${toolGroup("Security & administration", [
       ["security", "Security center", "View active protections"],
       [
@@ -341,7 +403,7 @@ function ownerName(id) {
   );
 }
 function empty(kind) {
-  return `<div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs empty flex flex-col items-center px-5 py-16 text-center [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-medium [&_p]:mb-6 [&_p]:text-sm [&_p]:text-slate-400"><div class="empty-icon mb-5 flex size-20 items-center justify-center rounded-3xl border border-emerald-100 bg-emerald-50 text-emerald-500/60">${glyph(pages[kind][2], "size-10")}</div><h3>Your ${pages[kind][0].toLowerCase()} start here</h3><p>Create your first item to get started.</p><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" data-create>＋ Create ${kind === "backups" ? "backup" : kind === "dns" ? "record" : kind.replace(/s$/, "")}</button></div>`;
+  return `<div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs empty flex flex-col items-center px-5 py-16 text-center [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-medium [&_p]:mb-6 [&_p]:text-sm [&_p]:text-slate-400"><div class="empty-icon mb-5 flex size-20 items-center justify-center rounded-3xl border border-emerald-100 bg-emerald-50 text-emerald-500/60">${glyph(pages[kind][2], "size-10")}</div><h3>Your ${pages[kind][0].toLowerCase()} start here</h3><p>Create your first item to get started.</p><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" data-create>＋ Create ${kind === "backups" ? "backup" : kind === "dns" ? "record" : kind.replace(/s$/, "")}</button></div>`;
 }
 async function resourcePage(kind) {
   const rows = await load(kind);
@@ -419,7 +481,12 @@ async function resourcePage(kind) {
         ];
       }
       if (kind === "schedules") {
-        cells = [esc(r.name), esc(d.schedule), esc(d.app_id?.slice(0, 12))];
+        cells = [
+          esc(r.name),
+          esc(d.schedule) + " · " + esc(d.timezone || "UTC"),
+          esc(d.app_id?.slice(0, 12)),
+        ];
+        actions = [["status", "Run history"]];
       }
       if (kind === "backups") {
         cells = [
@@ -432,7 +499,7 @@ async function resourcePage(kind) {
       if (kind === "blocks") {
         cells = [esc(r.name), esc(ownerName(r.owner)), esc(r.created)];
       }
-      return `<tr>${cells.map((c) => `<td>${c}</td>`).join("")}<td><div class="table-actions flex items-center gap-1.5 [&_button]:px-2.5 [&_button]:py-2 [&_button]:text-[10px]">${actions.map(([a, label]) => `<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" data-action="${a}" data-id="${r.id}">${glyph({ inspect: "activity", start: "play", stop: "square", restart: "refresh-cw", logs: "logs", "open-terminal": "terminal", tls: "lock-keyhole", access: "key-round", restore: "archive" }[a] || "arrow-up-right", "size-3.5")} ${label}</button>`).join("")}<button class="danger inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-red-100 bg-red-50/60 px-3 py-2 text-xs text-red-500 transition hover:bg-red-100" data-delete="${r.id}">${glyph("trash", "size-3.5")} Delete</button></div></td></tr>`;
+      return `<tr>${cells.map((c) => `<td>${c}</td>`).join("")}<td><div class="table-actions flex items-center gap-1.5 [&_button]:px-2.5 [&_button]:py-2 [&_button]:text-[10px]">${actions.map(([a, label]) => `<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" data-action="${a}" data-id="${r.id}">${glyph({ inspect: "activity", start: "play", stop: "square", restart: "refresh-cw", logs: "logs", "open-terminal": "terminal", tls: "lock-keyhole", access: "key-round", restore: "archive" }[a] || "arrow-up-right", "size-3.5")} ${label}</button>`).join("")}<button class="danger inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-red-100 bg-red-50/60 px-3 py-2 text-xs text-red-500 transition motion-reduce:transition-none hover:bg-red-100" data-delete="${r.id}">${glyph("trash", "size-3.5")} Delete</button></div></td></tr>`;
     })
     .join("")}</tbody></table></div>`;
   $("#content").innerHTML = html;
@@ -594,11 +661,20 @@ async function create(kind = current) {
         fields +=
           input("name", "Task name") +
           select("app_id", "Application", apps()) +
-          select("schedule", "Frequency", [
-            ["hourly", "Every hour"],
-            ["daily", "Every day"],
-            ["weekly", "Every week"],
-          ]) +
+          input(
+            "schedule",
+            "Crontab expression",
+            "text",
+            "Minute hour day-of-month month day-of-week. Supports *, ranges, lists, and steps.",
+            "0 * * * *",
+          ) +
+          input(
+            "timezone",
+            "Timezone",
+            "text",
+            "IANA timezone, such as Asia/Tehran or UTC.",
+            "UTC",
+          ) +
           textarea(
             "command",
             "Command",
@@ -684,21 +760,7 @@ document.addEventListener("click", async (e) => {
       return;
     }
     if (action === "tls") {
-      modal(
-        "Enable HTTPS",
-        input(
-          "email",
-          "Certificate contact email",
-          "email",
-          "The domain must resolve to this server. Submitting accepts the Let’s Encrypt subscriber agreement.",
-        ),
-        "Request certificate",
-        async (v) => {
-          await api(`/resource/${id}/tls`, "POST", v);
-          $("#dialog").close();
-          toast("Certificate issued.");
-        },
-      );
+      await extra.tlsForm(id);
       return;
     }
     if (action === "access") {
@@ -742,10 +804,26 @@ document.addEventListener("click", async (e) => {
     b.disabled = true;
     try {
       const r = await api(`/resource/${id}/${action}`, "POST", {});
-      if (["logs", "inspect"].includes(action))
+      if (action === "status") {
+        const history = [...(r.history || [])].reverse();
+        modal(
+          "Scheduled task history",
+          `<p class="mb-4 text-xs text-slate-500">Next run: ${r.next ? esc(new Date(r.next * 1000).toLocaleString()) : "Not scheduled"} · ${esc(r.timezone || "UTC")}</p>` +
+            (history.length
+              ? history
+                  .map(
+                    (entry) =>
+                      `<section class="mb-3 rounded-xl border border-slate-200 p-4"><div class="mb-2 flex justify-between text-xs"><span>${esc(new Date(entry.started * 1000).toLocaleString())}</span><span class="${entry.success ? "text-emerald-700" : "text-red-600"}">${entry.success ? "Succeeded" : "Failed"}</span></div><pre class="overflow-auto whitespace-pre-wrap break-all text-xs text-slate-500">${esc(entry.output || "No output")}</pre></section>`,
+                  )
+                  .join("")
+              : '<p class="text-xs text-slate-500">This task has not run yet.</p>'),
+          "",
+          null,
+        );
+      } else if (["logs", "inspect"].includes(action))
         modal(
           action === "logs" ? "Application logs" : "Application status",
-          `<pre class="secret-result overflow-auto whitespace-pre-wrap break-all rounded-xl border border-slate-200 bg-slate-50 p-5 font-mono text-xs leading-7">${esc(r.output)}</pre>`,
+          `<pre class="secret-result overflow-auto whitespace-pre-wrap break-all rounded-xl border border-slate-200 bg-slate-50 p-5 font-mono text-xs leading-7">${esc(r.output ?? JSON.stringify(r, null, 2))}</pre>`,
           "",
           null,
         );
@@ -770,7 +848,7 @@ async function workspace(mode) {
     return;
   }
   $("#content").innerHTML =
-    `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">${mode === "terminal" ? "Commands run as UID 1000 inside your rootless application container. Use pip --user, npm, Maven/Gradle, or Cargo in /workspace. Host root access and system package installation are unavailable. Each command has a 25-second limit; this is a command console, not an interactive TTY." : "Files are read and written through the application container. Relative paths stay inside the container; edits are limited to 256 KiB per file. The application must be running."}</div><div class="toolbar mb-5 flex flex-wrap items-center gap-3 [&_input]:min-w-0 [&_input]:flex-1 [&_input]:rounded-lg [&_input]:border [&_input]:border-slate-200 [&_input]:bg-white [&_input]:px-4 [&_input]:py-2.5 [&_input]:text-xs [&_select]:rounded-lg [&_select]:border [&_select]:border-slate-200 [&_select]:bg-white [&_select]:px-4 [&_select]:py-2.5 [&_select]:text-xs"><select id="app-picker" aria-label="Application">${apps.map((a) => `<option value="${a.id}">${esc(a.name)} · ${esc(a.data.runtime)}</option>`).join("")}</select>${mode === "files" ? '<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="list-files">List files</button><input id="file-path" placeholder="Relative path, e.g. main.py" aria-label="Relative file path"><button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="read-file">Open</button><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" id="write-file">Save</button>' : ""}</div>${mode === "terminal" ? '<div class="terminal mb-5 overflow-hidden rounded-xl border border-slate-700 bg-[#122820] text-emerald-100/80 [&_pre]:min-h-80 [&_pre]:max-h-[520px] [&_pre]:overflow-auto [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:p-6 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-7"><div class="terminal-bar flex justify-between gap-3 border-b border-white/10 px-5 py-3.5 text-[10px] text-emerald-100/40"><span>CGPanel command console</span><span>UNPRIVILEGED · /workspace</span></div><pre id="terminal-output">Choose an application and enter a command.\nTry: id, ls -la, python --version\n</pre><form class="command-line flex items-center gap-3 border-t border-white/10 p-4 text-mint [&_input]:min-w-0 [&_input]:flex-1 [&_input]:bg-transparent [&_input]:font-mono [&_input]:text-xs [&_input]:text-emerald-50 [&_input]:outline-none" id="command-form"><span>❯</span><input id="command" autocomplete="off" spellcheck="false" placeholder="Enter command…" aria-label="Command"><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50">Run ↵</button></form></div>' : '<div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs"><textarea id="file-editor" class="editor min-h-96 w-full border-0 bg-[#122820] p-6 font-mono text-xs leading-7 text-emerald-100/85 outline-none" spellcheck="false" aria-label="File editor" placeholder="Open a file or enter a relative path and save a new file."></textarea></div><pre id="file-list" class="secret-result overflow-auto whitespace-pre-wrap break-all rounded-xl border border-slate-200 bg-slate-50 p-5 font-mono text-xs leading-7" hidden></pre>'}`;
+    `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">${mode === "terminal" ? "Commands run as UID 1000 inside your rootless application container. Use pip --user, npm, Maven/Gradle, or Cargo in /workspace. Host root access and system package installation are unavailable. Each command has a 25-second limit; this is a command console, not an interactive TTY." : "Files are read and written through the application container. Relative paths stay inside the container; edits are limited to 256 KiB per file. The application must be running."}</div><div class="toolbar mb-5 flex flex-wrap items-center gap-3 [&_input]:min-w-0 [&_input]:flex-1 [&_input]:rounded-lg [&_input]:border [&_input]:border-slate-200 [&_input]:bg-white [&_input]:px-4 [&_input]:py-2.5 [&_input]:text-xs [&_select]:rounded-lg [&_select]:border [&_select]:border-slate-200 [&_select]:bg-white [&_select]:px-4 [&_select]:py-2.5 [&_select]:text-xs"><select id="app-picker" aria-label="Application">${apps.map((a) => `<option value="${a.id}">${esc(a.name)} · ${esc(a.data.runtime)}</option>`).join("")}</select>${mode === "files" ? '<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="list-files">List files</button><input id="file-path" placeholder="Relative path, e.g. main.py" aria-label="Relative file path"><button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="read-file">Open</button><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" id="write-file">Save</button>' : ""}</div>${mode === "terminal" ? '<div class="terminal mb-5 overflow-hidden rounded-xl border border-slate-700 bg-[#122820] text-emerald-100/80 [&_pre]:min-h-80 [&_pre]:max-h-[520px] [&_pre]:overflow-auto [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:p-6 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-7"><div class="terminal-bar flex justify-between gap-3 border-b border-white/10 px-5 py-3.5 text-[10px] text-emerald-100/40"><span>CGPanel command console</span><span>UNPRIVILEGED · /workspace</span></div><pre id="terminal-output">Choose an application and enter a command.\nTry: id, ls -la, python --version\n</pre><form class="command-line flex items-center gap-3 border-t border-white/10 p-4 text-mint [&_input]:min-w-0 [&_input]:flex-1 [&_input]:bg-transparent [&_input]:font-mono [&_input]:text-xs [&_input]:text-emerald-50 [&_input]:outline-none" id="command-form"><span>❯</span><input id="command" autocomplete="off" spellcheck="false" placeholder="Enter command…" aria-label="Command"><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50">Run ↵</button></form></div>' : '<div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs"><textarea id="file-editor" class="editor min-h-96 w-full border-0 bg-[#122820] p-6 font-mono text-xs leading-7 text-emerald-100/85 outline-none" spellcheck="false" aria-label="File editor" placeholder="Open a file or enter a relative path and save a new file."></textarea></div><pre id="file-list" class="secret-result overflow-auto whitespace-pre-wrap break-all rounded-xl border border-slate-200 bg-slate-50 p-5 font-mono text-xs leading-7" hidden></pre>'}`;
   const picker = $("#app-picker");
   const saved = sessionStorage.getItem("cg-app");
   if (apps.some((a) => a.id === saved)) picker.value = saved;
@@ -830,7 +908,7 @@ async function workspace(mode) {
 async function usersPage() {
   userList = await api("/users");
   $("#content").innerHTML =
-    `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">Tenants cannot become administrators, obtain host root, or access another tenant’s resources. Account suspension revokes panel sessions; running workloads remain online.</div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs table-wrap overflow-x-auto"><table class="data-table w-full border-collapse whitespace-nowrap text-left [&_th]:bg-slate-50/70 [&_th]:px-5 [&_th]:py-3.5 [&_th]:text-[9px] [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-slate-400 [&_td]:border-t [&_td]:border-slate-100 [&_td]:px-5 [&_td]:py-5 [&_td]:text-xs [&_td_small]:mt-1 [&_td_small]:block [&_td_small]:max-w-48 [&_td_small]:truncate [&_td_small]:text-[10px] [&_td_small]:text-slate-400 [&_tbody_tr]:transition [&_tbody_tr:hover]:bg-slate-50/50"><thead><tr><th>Account</th><th>Role</th><th>State</th><th>Quota / type</th><th>Panel access</th><th>Actions</th></tr></thead><tbody>${userList.map((u) => `<tr><td><b>${esc(u.username)}</b><small>${u.id.slice(0, 12)}</small></td><td>${esc(u.role)}</td><td><span class="pill inline-flex items-center rounded-md border border-emerald-100 bg-emerald-50/70 px-2 py-1 text-[10px] font-medium text-emerald-700">${u.enabled ? "Enabled" : "Suspended"}</span></td><td>${u.quota}</td><td>${esc(u.allowed_ips.join(", ") || "Any source IP")}</td><td>${u.role === "admin" ? "—" : `<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" data-user="${u.id}">Manage access</button>`}</td></tr>`).join("")}</tbody></table></div>`;
+    `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">Tenants cannot become administrators, obtain host root, or access another tenant’s resources. Account suspension revokes panel sessions; running workloads remain online.</div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs table-wrap overflow-x-auto"><table class="data-table w-full border-collapse whitespace-nowrap text-left [&_th]:bg-slate-50/70 [&_th]:px-5 [&_th]:py-3.5 [&_th]:text-[9px] [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-slate-400 [&_td]:border-t [&_td]:border-slate-100 [&_td]:px-5 [&_td]:py-5 [&_td]:text-xs [&_td_small]:mt-1 [&_td_small]:block [&_td_small]:max-w-48 [&_td_small]:truncate [&_td_small]:text-[10px] [&_td_small]:text-slate-400 [&_tbody_tr]:transition [&_tbody_tr:hover]:bg-slate-50/50"><thead><tr><th>Account</th><th>Role</th><th>State</th><th>Quota / type</th><th>Panel access</th><th>Actions</th></tr></thead><tbody>${userList.map((u) => `<tr><td><b>${esc(u.username)}</b><small>${u.id.slice(0, 12)}</small></td><td>${esc(u.role)}</td><td><span class="pill inline-flex items-center rounded-md border border-emerald-100 bg-emerald-50/70 px-2 py-1 text-[10px] font-medium text-emerald-700">${u.enabled ? "Enabled" : "Suspended"}</span></td><td>${u.quota}</td><td>${esc(u.allowed_ips.join(", ") || "Any source IP")}</td><td>${u.role === "admin" ? "—" : `<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" data-user="${u.id}">Manage access</button>`}</td></tr>`).join("")}</tbody></table></div>`;
 }
 function editUser(id) {
   const u = userList.find((x) => x.id === id);
@@ -895,7 +973,7 @@ function security() {
     ],
   ];
   $("#content").innerHTML =
-    `<div class="info-box mb-5 rounded-xl border px-5 py-4 text-xs leading-6 warning-box border-amber-200/60 bg-amber-50/60 text-amber-900/65">This community alpha has not undergone an independent security audit. Host controls cannot absorb a flood that saturates the server’s network link; arrange upstream DDoS protection with your provider. Disk quotas, WAF rules, MFA, and mail hosting are not implemented in this release.</div><div class="grid-two grid items-start gap-5 lg:grid-cols-2"><section class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs"><div class="card-head flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_small]:text-[9px] [&_small]:font-medium [&_small]:tracking-wider [&_small]:text-slate-400"><h3>Implemented protections</h3><small>CONFIGURATION SUMMARY</small></div>${features.map(([name, detail]) => `<div class="feature-item flex items-start gap-3 border-b border-slate-100 px-5 py-4 last:border-b-0 [&_strong]:text-xs [&_strong]:font-medium [&_p]:mt-1.5 [&_p]:text-[11px] [&_p]:leading-6 [&_p]:text-slate-400"><span class="feature-check mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[10px] text-emerald-600">✓</span><div><strong>${name}</strong><p>${detail}</p></div></div>`).join("")}</section><section><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Security boundaries</h3><p>Tenant commands run inside their own containers. A separate Rust broker performs a fixed set of host operations over a local Unix socket.</p><p>The broker is trusted infrastructure. Keep it updated and restrict host SSH access to administrators.</p><a class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" href="#audit">Review activity →</a></div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Access management</h3><p>Apply source IP rules to tenant panel logins and to each database independently.</p><a class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" href="#${me.role === "admin" ? "users" : "settings"}">Manage accounts →</a></div></section></div>`;
+    `<div class="info-box mb-5 rounded-xl border px-5 py-4 text-xs leading-6 warning-box border-amber-200/60 bg-amber-50/60 text-amber-900/65">This community alpha has not undergone an independent security audit. Host controls cannot absorb a flood that saturates the server’s network link; arrange upstream DDoS protection with your provider. Disk quotas, WAF rules, MFA, and mail hosting are not implemented in this release.</div><div class="grid-two grid items-start gap-5 lg:grid-cols-2"><section class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs"><div class="card-head flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_small]:text-[9px] [&_small]:font-medium [&_small]:tracking-wider [&_small]:text-slate-400"><h3>Implemented protections</h3><small>CONFIGURATION SUMMARY</small></div>${features.map(([name, detail]) => `<div class="feature-item flex items-start gap-3 border-b border-slate-100 px-5 py-4 last:border-b-0 [&_strong]:text-xs [&_strong]:font-medium [&_p]:mt-1.5 [&_p]:text-[11px] [&_p]:leading-6 [&_p]:text-slate-400"><span class="feature-check mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[10px] text-emerald-600">✓</span><div><strong>${name}</strong><p>${detail}</p></div></div>`).join("")}</section><section><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Security boundaries</h3><p>Tenant commands run inside their own containers. A separate Rust broker performs a fixed set of host operations over a local Unix socket.</p><p>The broker is trusted infrastructure. Keep it updated and restrict host SSH access to administrators.</p><a class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" href="#audit">Review activity →</a></div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Access management</h3><p>Apply source IP rules to tenant panel logins and to each database independently.</p><a class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" href="#${me.role === "admin" ? "users" : "settings"}">Manage accounts →</a></div></section></div>`;
 }
 async function auditPage() {
   const d = await api("/overview");
@@ -904,7 +982,7 @@ async function auditPage() {
 }
 function settings() {
   $("#content").innerHTML =
-    `<div class="grid-two grid items-start gap-5 lg:grid-cols-2"><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Your account</h3><p><b>${esc(me.username)}</b> · ${esc(me.role)}</p><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" id="change-password">Change password</button></div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Current session</h3><p>Sessions expire after eight hours. Password changes revoke all your sessions.</p><button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="logout">Sign out</button></div></div>`;
+    `<div class="grid-two grid items-start gap-5 lg:grid-cols-2"><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Your account</h3><p><b>${esc(me.username)}</b> · ${esc(me.role)}</p><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" id="change-password">Change password</button></div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Current session</h3><p>Sessions expire after eight hours. Password changes revoke all your sessions.</p><button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="logout">Sign out</button></div></div>`;
   $("#logout").onclick = async () => {
     await api("/logout", "POST", {});
     showLogin();
@@ -928,4 +1006,16 @@ function settings() {
       },
     );
 }
+const extra = features({
+  api,
+  esc,
+  glyph,
+  modal,
+  input,
+  textarea,
+  select,
+  toast,
+  getMe: () => me,
+  getCurrent: () => current,
+});
 boot();

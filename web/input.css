@@ -3,7 +3,19 @@
 @source "./index.html";
 @source "./app.js";
 @source "./icons.js";
+@source "./features.js";
 @theme {
+  --animate-enter: enter 280ms ease-out both;
+  @keyframes enter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --color-forest: #132e29;
   --color-mint: #c3f092;

@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew CGPanel domain and short-lived IP certificates
+After=network-online.target nginx.service named.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/cgpanel-tools/certbot/bin/certbot renew --quiet --deploy-hook /usr/local/lib/cgpanel/reload-nginx
+TimeoutStartSec=30min
+UMask=0077

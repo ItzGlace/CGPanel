@@ -1,6 +1,6 @@
 # Security policy
 
-CGPanel 0.1 is development software and has not been independently audited. Use trusted development tenants on a dedicated host.
+CGPanel 0.2 is development software and has not been independently audited. Use trusted development tenants on a dedicated host.
 
 Do not publish exploit details, credentials, or tenant data in public issues. Use the repository owner's private security advisory facility to report a vulnerability; if that is unavailable, request a private contact without including exploit details. The project's maintainers must establish a supported release and disclosure process before production use.
 
@@ -13,6 +13,9 @@ Do not publish exploit details, credentials, or tenant data in public issues. Us
 - Commands use argument arrays. Tenant-supplied commands are interpreted only inside the tenant's container as an unprivileged UID. Tenant input is never interpolated into a root shell command.
 - The root broker and panel account are trusted. Compromise of either is a serious incident. Container and kernel vulnerabilities remain relevant.
 - Database secrets live in the root-only broker registry. Container environment secrets are readable to the container owner. They are not a multi-party secrets vault.
+- Integration credentials are root-owned and omitted from reads. Full `.cgp` archives include secrets and are not encrypted at rest; protect their downloads and remote destinations.
+- Application SOCKS gateways run in rootless network namespaces. Only the pinned SOCKS endpoint is reachable directly; other TCP and DNS are redirected, while IPv6 and other UDP are blocked. Gateway failure must never enable direct fallback.
+- Public analytics is bounded and opt-in. Daily site-scoped hashes estimate distinct IPs, not people. Domain ownership and Origin checks do not make browser-submitted events tamper-proof.
 
 ## Operational requirements
 

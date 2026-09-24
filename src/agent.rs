@@ -1,4 +1,10 @@
 //! Linux privileged broker. The HTTP process never runs as root.
+mod backups_agent;
+mod cron_agent;
+mod egress_agent;
+mod integrations_agent;
+mod tls_agent;
+mod transfers_agent;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use cgpanel::{identifier, Operation};
 use serde::{Deserialize, Serialize};
@@ -237,7 +243,9 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
     let dir = appdir(&op.tenant, &op.id);
     tokio::fs::create_dir_all(&dir).await?;
     let (file, content, default) = starter(runtime);
-    tokio::fs::write(format!("{dir}/{file}"), content).await?;
+    if op.action != "egress_configure" {
+        tokio::fs::write(format!("{dir}/{file}"), content).await?;
+    }
     run(
         "chown",
         &[
@@ -247,9 +255,27 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         ],
     )
     .await?;
-    let port = reg.ports.max(20000) + 1;
+    let port = if op.action == "egress_configure" {
+        reg.items
+            .get(&op.id)
+            .and_then(|i| i.data["port"].as_u64())
+            .context("Missing application port")? as u16
+    } else {
+        reg.ports.max(20000) + 1
+    };
     ensure!(port < 40000, "Application port range exhausted");
-    reg.ports = port;
+    reg.ports = reg.ports.max(port);
+    let proxy_network = egress_agent::prepare(reg, op, port).await?;
+    let user_namespace = if proxy_network.is_empty() {
+        "keep-id:uid=1000,gid=1000".to_owned()
+    } else {
+        proxy_network.clone()
+    };
+    let network = if proxy_network.is_empty() {
+        "slirp4netns:allow_host_loopback=false"
+    } else {
+        &proxy_network
+    };
     let custom = s(&op.data, "command");
     let command = if custom.is_empty() { default } else { custom };
     ensure!(command.len() <= 2000, "Command too long");
@@ -260,7 +286,8 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         &container(&op.id),
         "--restart",
         "on-failure:3",
-        "--userns=keep-id:uid=1000,gid=1000",
+        "--userns",
+        &user_namespace,
         "--user",
         "1000:1000",
         "--cap-drop=ALL",
@@ -272,7 +299,7 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         "--pids-limit",
         "128",
         "--network",
-        "slirp4netns:allow_host_loopback=false",
+        network,
         "--read-only",
         "--tmpfs",
         "/tmp:rw,noexec,nosuid,size=128m",
@@ -295,7 +322,7 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         "--log-opt",
         "max-size=10mb",
     ]);
-    if s(&op.data, "mode") == "web" {
+    if s(&op.data, "mode") == "web" && proxy_network.is_empty() {
         a.extend(args(&["-p", &format!("127.0.0.1:{port}:8080")]));
     }
     if let Some(env) = op.data["env"].as_object() {
@@ -330,7 +357,6 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
     a.extend(args(&[&image, "sh", "-c", command]));
     pod(&op.tenant, a, None, 300).await?;
     let mut d = op.data.clone();
-    d.as_object_mut().unwrap().remove("env");
     d["port"] = json!(port);
     d["image"] = json!(image);
     reg.items.insert(
@@ -409,9 +435,24 @@ async fn create_domain(reg: &mut Registry, op: &Operation) -> Result<Value> {
         let _ = run("systemctl", &["reload", "nginx"]).await;
         return Err(e);
     }
+    tls_agent::render_domain(reg, &op.id, &reg.items[&op.id]).await?;
     Ok(json!({"url":format!("http://{name}"),"tls":"not issued"}))
 }
 async fn dns_sync(reg: &Registry) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    let _lock = tokio::task::spawn_blocking(|| -> Result<std::fs::File> {
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open("/run/cgpanel/dns.lock")?;
+        ensure!(
+            unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0,
+            "Cannot lock DNS"
+        );
+        Ok(file)
+    })
+    .await??;
     let mut config = String::new();
     let serial = chrono::Utc::now().timestamp();
     let server_ip = std::env::var("CGPANEL_PUBLIC_IP").unwrap_or("127.0.0.1".into());
@@ -422,6 +463,15 @@ async fn dns_sync(reg: &Registry) -> Result<()> {
     for (id, item) in reg.items.iter().filter(|(_, i)| i.kind == "domains") {
         let zone = s(&item.data, "name");
         let file = format!("/etc/bind/cgpanel/{id}.zone");
+        let old = tokio::fs::read_to_string(&file).await.unwrap_or_default();
+        let previous = old
+            .lines()
+            .find(|l| l.contains(" IN SOA "))
+            .and_then(|l| l.split_once('('))
+            .and_then(|(_, r)| r.split_whitespace().next())
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0);
+        let serial = serial.max(previous + 1);
         let records: Vec<_> = reg
             .items
             .values()
@@ -453,6 +503,20 @@ async fn dns_sync(reg: &Registry) -> Result<()> {
                 _ => val.into(),
             };
             content.push_str(&format!("{name} {ttl} IN {kind} {value}\n"));
+        }
+        if let Ok(challenges) =
+            tokio::fs::read_to_string(format!("{ROOT}/challenges/{id}.json")).await
+        {
+            for value in serde_json::from_str::<Vec<String>>(&challenges)? {
+                ensure!(
+                    value.len() <= 128
+                        && value
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b)),
+                    "Invalid stored ACME token"
+                );
+                content.push_str(&format!("_acme-challenge 60 IN TXT \"{value}\"\n"));
+            }
         }
         atomic(&file, &content, 0o644).await?;
         run("named-checkzone", &[zone, &file]).await?;
@@ -609,6 +673,30 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
         ensure!(!reg.items.contains_key(&op.id), "Resource already exists");
     }
     match op.action.as_str() {
+        "tls_issue" | "tls_status" | "tls_panel_ip" | "zone_export" | "cdn_configure" => {
+            tls_agent::execute(reg, &op).await
+        }
+        "egress_configure" => egress_agent::configure(reg, &op).await,
+        "egress_status" => {
+            let item = owned(reg, &op, "apps")?;
+            Ok(
+                json!({"proxy_id":s(&item.data,"egress_proxy_id"),"locked":item.data["egress_locked"]==true}),
+            )
+        }
+        "integration_test" => transfers_agent::test(reg, &op).await,
+        action if action.starts_with("full_backup_") => backups_agent::execute(reg, &op).await,
+        action if action.starts_with("integration_") || action == "telegram_send" => {
+            integrations_agent::execute(reg, &op).await
+        }
+        "site_seo" => {
+            let item = owned(reg, &op, "domains")?;
+            let scheme = if s(&op.data, "scheme") == "http" {
+                "http"
+            } else {
+                "https"
+            };
+            cgpanel::site::seo(&format!("{scheme}://{}/", s(&item.data, "name"))).await
+        }
         "health" => {
             let memory = tokio::fs::read_to_string("/proc/meminfo")
                 .await
@@ -757,47 +845,20 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
                 Ok(json!({"saved":true}))
             }
         }
-        "domain_tls" => {
-            let i = owned(reg, &op, "domains")?;
-            let name = s(&i.data, "name");
-            let email = s(&op.data, "email");
-            ensure!(
-                email.len() < 254
-                    && email.contains('@')
-                    && !email.starts_with('-')
-                    && !email.chars().any(char::is_control),
-                "Enter a valid certificate email"
-            );
-            let output = exec(
-                "certbot",
-                args(&[
-                    "--nginx",
-                    "--non-interactive",
-                    "--agree-tos",
-                    "--email",
-                    email,
-                    "--redirect",
-                    "-d",
-                    name,
-                ]),
-                None,
-                180,
-            )
-            .await?;
-            Ok(json!({"output":output,"tls":"issued"}))
-        }
+        "domain_tls" => tls_agent::issue(reg, &op).await,
         "create_schedule" => {
             reference(reg, s(&op.data, "app_id"), &op.tenant, "apps")?;
-            ensure!(
-                ["hourly", "daily", "weekly"].contains(&s(&op.data, "schedule")),
-                "Invalid schedule"
-            );
+            let next = cgpanel::schedule::next(
+                s(&op.data, "schedule"),
+                s(&op.data, "timezone"),
+                chrono::Utc::now().timestamp(),
+            )?;
             ensure!(
                 !s(&op.data, "command").is_empty() && s(&op.data, "command").len() <= 2000,
                 "Invalid schedule command"
             );
             let mut d = op.data.clone();
-            d["next"] = json!(chrono::Utc::now().timestamp() + period(s(&d, "schedule")));
+            d["next"] = json!(next);
             reg.items.insert(
                 op.id.clone(),
                 Item {
@@ -808,6 +869,7 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
             );
             Ok(json!({"state":"scheduled"}))
         }
+        "schedule_status" => Ok(owned(reg, &op, "schedules")?.data.clone()),
         "create_backup" => {
             let app = s(&op.data, "app_id");
             reference(reg, app, &op.tenant, "apps")?;
@@ -927,6 +989,7 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
                         40,
                     )
                     .await?;
+                    egress_agent::cleanup(&op.tenant, &op.id).await;
                 }
                 "domains" => {
                     tokio::fs::remove_file(format!("/etc/nginx/conf.d/cgp_{}.conf", op.id)).await?;
@@ -977,13 +1040,6 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
         _ => bail!("Operation is not allowed"),
     }
 }
-fn period(s: &str) -> i64 {
-    match s {
-        "hourly" => 3600,
-        "weekly" => 604800,
-        _ => 86400,
-    }
-}
 async fn save(reg: &Registry) -> Result<()> {
     atomic(
         &format!("{ROOT}/registry.json"),
@@ -1021,50 +1077,12 @@ async fn main() -> Result<()> {
         )
         .await;
     }
+    // Refresh generated vhosts during upgrades so existing domains gain ACME and telemetry routes.
+    for (id, item) in registry.items.iter().filter(|(_, i)| i.kind == "domains") {
+        tls_agent::render_domain(&registry, id, item).await?;
+    }
     let reg = Arc::new(Mutex::new(registry));
-    let timer = reg.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(30)).await;
-            let mut reg = timer.lock().await;
-            let now = chrono::Utc::now().timestamp();
-            let due: Vec<_> = reg
-                .items
-                .iter()
-                .filter(|(_, i)| {
-                    i.kind == "schedules" && i.data["next"].as_i64().unwrap_or(i64::MAX) <= now
-                })
-                .map(|(id, i)| (id.clone(), i.clone()))
-                .collect();
-            for (id, item) in due {
-                let app = s(&item.data, "app_id");
-                let output = pod(
-                    &item.tenant,
-                    args(&[
-                        "exec",
-                        "--user",
-                        "1000:1000",
-                        &container(app),
-                        "timeout",
-                        "--signal=KILL",
-                        "25s",
-                        "sh",
-                        "-c",
-                        s(&item.data, "command"),
-                    ]),
-                    None,
-                    35,
-                )
-                .await;
-                tracing::info!(schedule=%id,success=output.is_ok(),"scheduled command finished");
-                if let Some(i) = reg.items.get_mut(&id) {
-                    i.data["next"] = json!(now + period(s(&i.data, "schedule")));
-                    i.data["last_success"] = json!(output.is_ok());
-                }
-                let _ = save(&reg).await;
-            }
-        }
-    });
+    cron_agent::start(reg.clone());
     let socket = std::env::var("CGPANEL_AGENT_SOCKET").unwrap_or("/run/cgpanel/agent.sock".into());
     if Path::new(&socket).exists() {
         tokio::fs::remove_file(&socket).await?;
@@ -1092,6 +1110,29 @@ async fn main() -> Result<()> {
                 return;
             }
             let result = match serde_json::from_str::<Operation>(&line) {
+                Ok(op)
+                    if [
+                        "telegram_send",
+                        "integration_list",
+                        "integration_test",
+                        "site_seo",
+                        "schedule_status",
+                        "tls_status",
+                        "zone_export",
+                        "egress_status",
+                    ]
+                    .contains(&op.action.as_str()) =>
+                {
+                    // Read-only operations use the last atomically saved registry, so a backup
+                    // cannot block alerts, monitoring, or integration status requests.
+                    match tokio::fs::read_to_string(format!("{ROOT}/registry.json")).await {
+                        Ok(data) => match serde_json::from_str::<Registry>(&data) {
+                            Ok(mut snapshot) => execute(&mut snapshot, op).await,
+                            Err(error) => Err(anyhow!(error)),
+                        },
+                        Err(error) => Err(anyhow!(error)),
+                    }
+                }
                 Ok(op) => {
                     let mut reg = reg.lock().await;
                     let result = execute(&mut reg, op).await;

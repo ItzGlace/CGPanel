@@ -121,6 +121,7 @@ printf 'CGPANEL_PUBLIC_IP=%s\n' "$CGPANEL_PUBLIC_IP" > /etc/cgpanel/agent.env
 printf 'CGPANEL_IMAGE_REGISTRY=%s\n' "${CGPANEL_IMAGE_REGISTRY:-docker.io}" >> /etc/cgpanel/agent.env
 chmod 0600 /etc/cgpanel/agent.env
 install -m 0644 deploy/cgpanel.service deploy/cgpanel-agent.service /etc/systemd/system/
+bash deploy/install-features.sh
 systemctl daemon-reload
 nginx -t
 named-checkconf

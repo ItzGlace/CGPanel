@@ -7,7 +7,7 @@ This list records missing work, not available features.
 3. Project and tenant disk/inode quotas, aggregate resource limits, storage alerts, image digest pinning, image management, and image scanning.
 4. MFA/WebAuthn, scoped API tokens, session inventory, password recovery, and delegated administrator roles.
 5. Container runtime settings, rolling deployments, Git deploy keys/webhooks, environment secret rotation, interactive PTY sessions, and long-running package jobs.
-6. Database dumps/restoration, SQL GUI integration, user/grant editing, certificate distribution, local application database proxying, encrypted off-server backups, retention, and scheduled backups.
+6. SQL GUI integration, user/grant editing, certificate distribution, local application database proxying, archive encryption, cross-server restore/import, and remote retention management. Version 0.2 supplies logical database dumps/restores, local retention, and scheduled off-server backups.
 7. WAF integration, security event dashboards, provider/CDN integrations, and operator-tested incident workflows.
 8. Mail (SMTP/IMAP, spam filtering, DKIM/SPF/DMARC), SFTP accounts, registrar integrations, DNSSEC, secondary DNS, statistics, redirect management, and file upload/download archives.
 9. cPanel/WHM migration, reseller plans, account exports, billing hooks, WordPress/application installers, and wider distribution support.

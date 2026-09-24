@@ -25,6 +25,8 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
+mod monitoring;
+mod v2;
 
 #[derive(Clone)]
 struct App {
@@ -642,9 +644,12 @@ async fn create_resource(
             {
                 return Err(bad("Enter a name and command"));
             }
-            if !["hourly", "daily", "weekly"].contains(&text(&v, "schedule")) {
-                return Err(bad("Choose hourly, daily or weekly"));
-            }
+            cgpanel::schedule::next(
+                text(&v, "schedule"),
+                text(&v, "timezone"),
+                chrono::Utc::now().timestamp(),
+            )
+            .map_err(|e| bad(e.to_string()))?;
             "create_schedule"
         }
         "backups" => {
@@ -762,6 +767,7 @@ async fn app_action(
         ("domains", "tls") => "domain_tls",
         ("databases", "access") => "database_access",
         ("backups", "restore") => "restore_backup",
+        ("schedules", "status") => "schedule_status",
         _ => return Err(bad("Unsupported operation")),
     };
     if mapped == "terminal" && (text(&v, "command").is_empty() || text(&v, "command").len() > 4000)
@@ -876,7 +882,14 @@ async fn main() -> anyhow::Result<()> {
         limits: Default::default(),
         writes: Default::default(),
     };
+    v2::start(app.clone())
+        .await
+        .map_err(|e| anyhow::anyhow!(e.1))?;
+    monitoring::start(app.clone());
+    v2::start_plans(app.clone());
     let api = Router::new()
+        .merge(v2::routes())
+        .merge(monitoring::routes())
         .route("/me", get(me))
         .route("/logout", post(logout))
         .route("/overview", get(overview))
@@ -891,6 +904,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/resource/{id}/{action}", post(app_action))
         .route_layer(middleware::from_fn_with_state(app.clone(), authenticate));
     let router = Router::new()
+        .merge(monitoring::public_routes())
         .route(
             "/",
             get(|| async { Html(include_str!("../web/index.html")) }),
@@ -919,6 +933,15 @@ async fn main() -> anyhow::Result<()> {
                 (
                     [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
                     include_str!("../web/icons.js"),
+                )
+            }),
+        )
+        .route(
+            "/features.js",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("../web/features.js"),
                 )
             }),
         )

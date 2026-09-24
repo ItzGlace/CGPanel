@@ -2,6 +2,11 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+pub mod outbound;
+pub mod s3_upload;
+pub mod schedule;
+pub mod site;
+pub mod socks;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Operation {
@@ -86,6 +91,9 @@ pub fn dns_record(kind: &str, name: &str, value: &str, zone: &str) -> bool {
 }
 
 pub async fn agent_call(socket: &str, op: Operation) -> Result<Value> {
+    agent_call_timeout(socket, op, 360).await
+}
+pub async fn agent_call_timeout(socket: &str, op: Operation, seconds: u64) -> Result<Value> {
     #[cfg(unix)]
     {
         let mut stream = tokio::net::UnixStream::connect(socket).await?;
@@ -94,7 +102,7 @@ pub async fn agent_call(socket: &str, op: Operation) -> Result<Value> {
         stream.write_all(&request).await?;
         let mut response = String::new();
         tokio::time::timeout(
-            std::time::Duration::from_secs(360),
+            std::time::Duration::from_secs(seconds),
             BufReader::new(stream).read_line(&mut response),
         )
         .await??;
@@ -109,7 +117,7 @@ pub async fn agent_call(socket: &str, op: Operation) -> Result<Value> {
     }
     #[cfg(not(unix))]
     {
-        let _ = (socket, op);
+        let _ = (socket, op, seconds);
         bail!("Host operations require Linux")
     }
 }

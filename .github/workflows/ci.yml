@@ -20,4 +20,5 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
-      - run: bash -n deploy/install.sh
+      - run: python3 -m py_compile tests/*.py deploy/install-rclone.py
+      - run: bash -n deploy/install.sh deploy/install-features.sh deploy/upgrade-v0.2.sh deploy/reload-nginx

@@ -4,7 +4,7 @@
 
 CGPanel brings websites, APIs, Telegram bots, databases, and hosting tools into a familiar category-based dashboard. It is an independent project, with an original interface inspired by traditional hosting panels. It is not affiliated with cPanel.
 
-> **Version 0.1 is a development alpha, not a complete cPanel replacement.** Use a dedicated development server. Do not entrust production tenants or irreplaceable data to this release without further security review, operational testing, and off-server backups.
+> **Version 0.2 is a development alpha, not a complete cPanel replacement.** Use a dedicated development server. Do not entrust production tenants or irreplaceable data to this release without further security review, operational testing, and off-server backups.
 
 ## Working features
 
@@ -18,8 +18,12 @@ CGPanel brings websites, APIs, Telegram bots, databases, and hosting tools into 
 | Databases | MySQL-compatible MariaDB and PostgreSQL; per-database users, database-specific grants, local access and exact-IP remote access with TLS |
 | Files | Container-confined file listing, text reading, and editing |
 | Console | Unprivileged commands inside application containers; user-space package installation |
-| Schedules | Hourly, daily, and weekly container commands |
-| Backups | Application workspace archives and restore operations |
+| Schedules | Five-field cron, IANA timezones, next runs and execution history |
+| Backups | Full `.cgp` ZIP archives with files, SQL, domain/DNS configuration; file/database restore; scheduled Telegram, S3 and SSH delivery |
+| Monitoring | HTTP availability, response times, Telegram outage/recovery alerts |
+| Analytics | Optional daily unique-IP estimates, page views, referrers, click heatmaps, technical SEO checks |
+| HTTPS / CDN | HTTP or DNS verification, automatic renewal, short-lived panel IP certificates, Cloudflare zone export |
+| SOCKS5 | Per-integration proxy routing and enforced application TCP/DNS gateways, with administrator locks |
 | Security | Argon2id, HttpOnly/SameSite sessions, CSRF checks, login throttling, ownership checks, audit records, Nginx rate/connection limits, nftables IP blocking, Fail2ban for SSH |
 
 ## Architecture
@@ -64,6 +68,10 @@ systemctl status cgpanel cgpanel-agent
 journalctl -u cgpanel -u cgpanel-agent -f
 ```
 
+## Upgrade and v0.2 features
+
+See [the v0.2 guide](docs/V0.2-GUIDE.md) for upgrade instructions, setup, archive format, privacy behavior, certificate renewal, and proxy protocol limits. The [release jobs and charts](docs/RELEASE-0.2.md) record the implementation and verification scope.
+
 ## First application
 
 1. Create a tenant in **User manager**.
@@ -94,7 +102,7 @@ See [SECURITY.md](SECURITY.md) and [docs/ROADMAP.md](docs/ROADMAP.md). Specific 
 - Nginx and firewall controls reduce some abusive traffic; they cannot prevent upstream bandwidth saturation. Arrange provider/CDN DDoS protection separately.
 - Workspaces have resource-count quotas but **no disk or inode quotas**. Container images and backup archives also consume shared disk. Trusted development tenants only.
 - The terminal is a bounded command console, not an interactive PTY. Commands have a 25-second limit and captured output is bounded.
-- Backups include application workspace files only. They are live file copies and are not guaranteed application-consistent. Database backups, encryption, retention, off-server copies, and automatic schedules are not included. Restore overlays files, retaining newer files absent from the archive.
+- Full backups contain secrets and are not encrypted at rest. Each database dump has its own consistency boundary. Restore overlays files and SQL into existing owned resources; domain reassignment, portable archive import and automatic application configuration restoration require administrator recovery. See the v0.2 guide for exact scope.
 - Suspending a tenant disables panel login and revokes sessions; it does not stop running workloads. Application deletion retains workspace files for administrator recovery.
 - Audit presentation shows the latest 20 events. Audit records are stored locally and are not tamper-proof against a host administrator.
 - Resource mutation spans host services and two registries. A crash or partial provisioning failure may require administrator reconciliation. Back up both registries together.
