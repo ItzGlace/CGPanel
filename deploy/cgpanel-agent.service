@@ -1,0 +1,20 @@
+[Unit]
+Description=CGPanel privileged provisioning broker
+After=network-online.target nginx.service mariadb.service postgresql.service named.service nftables.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=cgpanel
+RuntimeDirectory=cgpanel
+RuntimeDirectoryMode=0750
+EnvironmentFile=/etc/cgpanel/agent.env
+ExecStart=/usr/local/bin/cgpanel-agent
+Restart=on-failure
+RestartSec=5
+UMask=0077
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

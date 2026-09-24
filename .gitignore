@@ -1,0 +1,10 @@
+/target/
+*.db
+*.db-shm
+*.db-wal
+.env
+*.pem
+*.key
+credentials*
+node_modules/
+__pycache__/

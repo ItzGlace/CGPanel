@@ -1,0 +1,21 @@
+table inet cgpanel {
+ set blocked4 { type ipv4_addr; }
+ set blocked6 { type ipv6_addr; }
+ set database4 { type ipv4_addr; }
+ set database6 { type ipv6_addr; }
+ chain input {
+  type filter hook input priority 0; policy drop;
+  iifname "lo" accept
+  ip saddr @blocked4 drop
+  ip6 saddr @blocked6 drop
+  ct state invalid drop
+  ct state established,related accept
+  meta l4proto { icmp, ipv6-icmp } accept
+  tcp dport 22 accept
+  tcp dport { 80, 443, 2083 } ct state new limit rate 100/second burst 200 packets accept
+  udp dport 53 accept
+  tcp dport 53 accept
+  ip saddr @database4 tcp dport { 3306, 5432 } accept
+  ip6 saddr @database6 tcp dport { 3306, 5432 } accept
+ }
+}

@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#132e29" />
+    <title>CGPanel · Your server, beautifully managed</title>
+    <link rel="icon" href="/assets/cgpanel-mark.png" />
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body
+    class="min-h-screen bg-[#f5f7f5] font-sans text-slate-800 antialiased selection:bg-lime-200"
+  >
+    <section
+      id="login-screen"
+      class="grid min-h-screen lg:grid-cols-[1.1fr_1fr]"
+    >
+      <div
+        class="relative flex flex-col overflow-hidden bg-forest px-8 py-8 text-white sm:px-14 lg:px-20 lg:py-12"
+      >
+        <div
+          class="absolute -right-48 top-48 size-[650px] rounded-full border border-emerald-200/10"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="absolute -right-24 top-72 size-[450px] rounded-full border border-emerald-200/10"
+          aria-hidden="true"
+        ></div>
+        <a
+          href="/"
+          class="relative flex items-center gap-3 text-2xl font-semibold tracking-tight"
+          ><img
+            class="size-11 rounded-xl"
+            src="/assets/cgpanel-mark.png"
+            alt="CGPanel logo"
+          />CGPanel
+          <span
+            class="ml-1 rounded-full border border-white/15 px-2 py-1 text-[9px] font-medium tracking-wider text-emerald-100/70"
+            >COMMUNITY</span
+          ></a
+        >
+        <div class="relative my-auto py-16 lg:py-24">
+          <p class="mb-6 text-[10px] font-medium tracking-[.24em] text-mint">
+            THE OPEN SOURCE HOSTING WORKSPACE
+          </p>
+          <h1
+            class="max-w-xl text-5xl font-medium leading-[1.05] tracking-[-.04em] sm:text-6xl xl:text-7xl"
+          >
+            Your server.<br />Your ideas.<br /><span class="text-mint"
+              >All in one place.</span
+            >
+          </h1>
+          <p class="mt-7 max-w-sm text-sm leading-7 text-emerald-50/50">
+            From your first website to your next big API.<br />A calmer place to
+            build, deploy, and manage.
+          </p>
+          <div class="mt-10 flex gap-2 text-[10px] text-emerald-50/60">
+            <span class="rounded-lg border border-white/10 px-3 py-2"
+              >Python</span
+            ><span class="rounded-lg border border-white/10 px-3 py-2">PHP</span
+            ><span class="rounded-lg border border-white/10 px-3 py-2"
+              >Java</span
+            ><span class="rounded-lg border border-white/10 px-3 py-2"
+              >Rust</span
+            ><span class="rounded-lg border border-white/10 px-3 py-2"
+              >Node.js</span
+            >
+          </div>
+        </div>
+        <p class="relative text-[10px] text-emerald-50/35">
+          Built in Rust. Open by design. Yours to run.
+        </p>
+      </div>
+      <div
+        class="flex flex-col items-center justify-center bg-white px-8 py-14 lg:px-20"
+      >
+        <form id="login" class="my-auto w-full max-w-sm">
+          <span
+            class="mb-5 inline-flex size-12 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50"
+            ><img class="size-6" src="/assets/icons/lock-keyhole.svg" alt=""
+          /></span>
+          <p class="text-[10px] font-semibold tracking-[.2em] text-emerald-700">
+            WELCOME BACK
+          </p>
+          <h2 class="mt-3 text-3xl font-semibold tracking-tight">
+            Sign in to your workspace
+          </h2>
+          <p class="mb-9 mt-3 text-sm leading-6 text-slate-400">
+            Enter the details provided by your server administrator.
+          </p>
+          <label class="mb-5 block text-xs font-medium"
+            >Username<input
+              class="mt-2 block w-full rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm outline-none focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/5"
+              name="username"
+              autocomplete="username"
+              required
+              autofocus /></label
+          ><label class="mb-7 block text-xs font-medium"
+            >Password<input
+              class="mt-2 block w-full rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm outline-none focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/5"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required /></label
+          ><button
+            class="flex w-full cursor-pointer items-center justify-between rounded-lg bg-forest px-5 py-3.5 text-sm font-medium text-white transition hover:bg-emerald-900 disabled:opacity-50"
+            type="submit"
+          >
+            Sign in to CGPanel <span aria-hidden="true">→</span>
+          </button>
+          <div
+            id="login-error"
+            class="mt-4 text-xs text-red-600"
+            role="alert"
+          ></div>
+          <div
+            class="mt-8 flex items-center justify-center gap-2 text-[10px] text-slate-400"
+          >
+            <img
+              class="size-3.5 opacity-40"
+              src="/assets/icons/shield-check.svg"
+              alt=""
+            />Your workspace. Your control.
+          </div>
+        </form>
+        <p class="mt-14 text-[10px] text-slate-400">
+          CGPanel 0.1 alpha · Community edition
+        </p>
+      </div>
+    </section>
+    <div id="panel" hidden>
+      <aside
+        class="sidebar overflow-y-auto fixed inset-y-0 left-0 z-40 flex w-[236px] -translate-x-full flex-col bg-forest px-4 py-7 text-white transition-transform duration-200 lg:translate-x-0 [&.open]:translate-x-0"
+      >
+        <a
+          class="mx-3 mb-10 flex items-center gap-3 text-[22px] font-semibold tracking-tight"
+          href="#home"
+          ><img
+            class="size-10 rounded-xl"
+            src="/assets/cgpanel-mark.png"
+            alt="CGPanel logo"
+          />CGPanel<span
+            class="ml-auto rounded border border-emerald-100/20 px-1 text-[9px] font-normal text-emerald-100/50"
+            >CE</span
+          ></a
+        >
+        <div
+          class="mx-3 mb-4 text-[9px] font-medium tracking-[.2em] text-emerald-100/35"
+        >
+          YOUR WORKSPACE
+        </div>
+        <nav id="nav" class="flex flex-col gap-1"></nav>
+        <div class="mx-1 mt-auto pt-6">
+          <div class="rounded-xl border border-white/10 bg-white/[.025] p-4">
+            <div class="mb-2 flex items-center gap-2">
+              <span class="size-1.5 rounded-full bg-mint"></span
+              ><b class="text-[11px] font-medium text-emerald-50/90"
+                >Community edition</b
+              >
+            </div>
+            <p class="text-[10px] leading-5 text-emerald-50/35">
+              Free, open source, and built for<br />people who build.
+            </p>
+          </div>
+        </div>
+      </aside>
+      <div class="flex min-h-screen flex-col lg:ml-[236px]">
+        <header
+          class="flex h-[76px] items-center justify-between gap-4 border-b border-slate-200/70 bg-white px-5 lg:px-9"
+        >
+          <button
+            id="mobile-menu"
+            class="cursor-pointer rounded-lg p-2 text-slate-500 lg:hidden"
+            aria-label="Toggle menu"
+          >
+            <img class="size-5" src="/assets/icons/panel-left.svg" alt="" />
+          </button>
+          <div class="mr-auto flex items-center gap-3 text-xs text-slate-400">
+            <img
+              class="size-4 opacity-40"
+              src="/assets/icons/layout-dashboard.svg"
+              alt=""
+            /><span class="hidden sm:inline">Workspace</span
+            ><span class="text-slate-300">/</span
+            ><b id="breadcrumb" class="font-medium text-slate-600">Overview</b>
+          </div>
+          <span
+            class="hidden items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50/50 px-3 py-1.5 text-[9px] font-medium tracking-wider text-emerald-700 sm:flex"
+            ><span class="size-1.5 rounded-full bg-emerald-500"></span
+            >SELF-HOSTED</span
+          >
+          <div class="mx-1 hidden h-6 w-px bg-slate-100 sm:block"></div>
+          <button
+            id="account-menu"
+            class="flex cursor-pointer items-center gap-3 text-xs text-slate-600"
+          >
+            <span
+              id="avatar"
+              class="flex size-9 items-center justify-center rounded-full bg-[#edf2eb] font-semibold text-emerald-800"
+              >A</span
+            ><span id="username" class="hidden sm:inline"></span
+            ><img
+              class="size-3.5 opacity-50"
+              src="/assets/icons/chevron-down.svg"
+              alt=""
+            />
+          </button>
+        </header>
+        <main
+          class="mx-auto w-full max-w-[1600px] flex-1 px-5 py-8 sm:px-7 lg:px-9 lg:py-9"
+        >
+          <div class="mb-7 flex items-start justify-between gap-5">
+            <div>
+              <div
+                id="page-eyebrow"
+                class="mb-2 text-[9px] font-semibold tracking-[.2em] text-slate-400"
+              >
+                YOUR HOSTING WORKSPACE
+              </div>
+              <h1
+                id="page-title"
+                class="text-[30px] font-semibold leading-tight tracking-tight lg:text-[34px]"
+              >
+                Overview
+              </h1>
+              <p
+                id="page-description"
+                class="mt-2 text-xs leading-6 text-slate-400"
+              >
+                Everything you need to build, deploy, and keep things running.
+              </p>
+            </div>
+            <button
+              id="page-action"
+              class="primary mt-2 flex shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition hover:bg-emerald-900"
+              hidden
+            >
+              Create
+            </button>
+          </div>
+          <div id="content" class="[&_p]:leading-relaxed"></div>
+        </main>
+        <footer
+          class="flex flex-wrap justify-between gap-3 border-t border-slate-200/70 px-6 py-5 text-[10px] text-slate-400 lg:px-9"
+        >
+          <span
+            ><b class="font-medium text-slate-500">CGPanel</b>
+            <span class="mx-2 text-slate-300">/</span> Infrastructure for your
+            next idea.</span
+          ><span id="footer-status">Built in Rust · Community alpha</span>
+        </footer>
+      </div>
+    </div>
+    <dialog
+      id="dialog"
+      class="m-auto max-h-[90vh] w-[560px] max-w-[calc(100%-32px)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-7 text-slate-800 shadow-2xl backdrop:bg-forest/50 backdrop:backdrop-blur-sm"
+    >
+      <form id="dialog-form">
+        <div class="mb-7 flex items-start justify-between">
+          <div>
+            <span
+              class="text-[9px] font-semibold tracking-[.2em] text-emerald-700"
+              >CGPANEL WORKSPACE</span
+            >
+            <h2
+              id="dialog-title"
+              class="mt-2 text-2xl font-semibold tracking-tight"
+            ></h2>
+          </div>
+          <button
+            type="button"
+            id="close-dialog"
+            class="cursor-pointer rounded-lg p-1.5 text-slate-400 hover:bg-slate-50"
+            aria-label="Close"
+          >
+            <img class="size-5" src="/assets/icons/x.svg" alt="" />
+          </button>
+        </div>
+        <div
+          id="dialog-fields"
+          class="[&_label]:mb-5 [&_label]:block [&_label]:text-xs [&_label]:font-medium [&_input]:mt-2 [&_input]:block [&_input]:w-full [&_input]:rounded-lg [&_input]:border [&_input]:border-slate-200 [&_input]:bg-slate-50/50 [&_input]:px-3.5 [&_input]:py-2.5 [&_input]:text-sm [&_input]:outline-none [&_input:focus]:border-emerald-600 [&_select]:mt-2 [&_select]:block [&_select]:w-full [&_select]:rounded-lg [&_select]:border [&_select]:border-slate-200 [&_select]:bg-slate-50/50 [&_select]:px-3.5 [&_select]:py-2.5 [&_select]:text-sm [&_textarea]:mt-2 [&_textarea]:block [&_textarea]:min-h-24 [&_textarea]:w-full [&_textarea]:rounded-lg [&_textarea]:border [&_textarea]:border-slate-200 [&_textarea]:bg-slate-50/50 [&_textarea]:p-3.5 [&_textarea]:font-mono [&_textarea]:text-xs [&_small]:mt-2 [&_small]:block [&_small]:text-[10px] [&_small]:font-normal [&_small]:leading-5 [&_small]:text-slate-400 [&_p]:text-sm [&_p]:leading-6 [&_p]:text-slate-500"
+        ></div>
+        <div
+          id="dialog-error"
+          class="whitespace-pre-wrap text-xs text-red-600"
+          role="alert"
+        ></div>
+        <div class="mt-7 flex justify-end gap-2 border-t border-slate-100 pt-5">
+          <button
+            type="button"
+            id="cancel-dialog"
+            class="secondary cursor-pointer rounded-lg border border-slate-200 px-4 py-2.5 text-xs text-slate-500 hover:bg-slate-50"
+          >
+            Cancel</button
+          ><button
+            id="dialog-submit"
+            type="submit"
+            class="primary cursor-pointer rounded-lg bg-forest px-5 py-2.5 text-xs font-medium text-white hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50"
+          >
+            Create
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <div
+      id="toast"
+      class="fixed bottom-6 right-6 z-50 max-w-md rounded-xl border border-emerald-800 bg-forest px-5 py-4 text-xs text-emerald-50 shadow-xl"
+      role="status"
+      hidden
+    ></div>
+  </body>
+</html>

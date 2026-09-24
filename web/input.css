@@ -1,0 +1,10 @@
+@import "tailwindcss";
+@import "./fonts.css";
+@source "./index.html";
+@source "./app.js";
+@source "./icons.js";
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-forest: #132e29;
+  --color-mint: #c3f092;
+}

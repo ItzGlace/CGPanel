@@ -1,0 +1,34 @@
+[Unit]
+Description=CGPanel Rust hosting panel
+After=network.target cgpanel-agent.service
+Requires=cgpanel-agent.service
+
+[Service]
+Type=simple
+User=cgpanel
+Group=cgpanel
+WorkingDirectory=/var/lib/cgpanel
+Environment=CGPANEL_DB=/var/lib/cgpanel/panel.db
+Environment=CGPANEL_BIND=127.0.0.1:2082
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/cgpanel
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cgpanel
+RestrictSUIDSGID=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+MemoryMax=512M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
