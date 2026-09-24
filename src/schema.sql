@@ -54,3 +54,20 @@ CREATE TABLE IF NOT EXISTS api_tokens (
  created INTEGER NOT NULL, expires INTEGER NOT NULL, last_used INTEGER, revoked INTEGER
 );
 CREATE INDEX IF NOT EXISTS api_tokens_user ON api_tokens(user_id,created);
+CREATE TABLE IF NOT EXISTS website_protection (
+ domain_id TEXT PRIMARY KEY REFERENCES resources(id) ON DELETE CASCADE,
+ config TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS website_challenges (
+ nonce TEXT PRIMARY KEY, domain_id TEXT NOT NULL, ip TEXT NOT NULL,
+ answer TEXT NOT NULL, expires INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS website_passes (
+ token_hash TEXT PRIMARY KEY, domain_id TEXT NOT NULL, ip TEXT NOT NULL, expires INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS website_passes_expiry ON website_passes(expires);
+
+CREATE TABLE IF NOT EXISTS user_mfa (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, secret TEXT NOT NULL, last_step INTEGER NOT NULL DEFAULT -1);
+CREATE TABLE IF NOT EXISTS mfa_pending (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, secret TEXT NOT NULL, expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS mfa_recovery (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, code_hash TEXT NOT NULL, PRIMARY KEY(user_id,code_hash));
+CREATE TABLE IF NOT EXISTS mfa_attempts (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, started INTEGER NOT NULL, attempts INTEGER NOT NULL);

@@ -4,7 +4,7 @@
 
 CGPanel brings websites, APIs, Telegram bots, databases, and hosting tools into a familiar category-based dashboard. It is an independent project, with an original interface inspired by traditional hosting panels. It is not affiliated with cPanel.
 
-> **Version 0.3 is a development alpha, not a complete cPanel replacement.** Use a dedicated development server. Do not entrust production tenants or irreplaceable data to this release without further security review, operational testing, and off-server backups.
+> **Version 0.5 is a development alpha, not a complete cPanel replacement.** Use a dedicated development server. Do not entrust production tenants or irreplaceable data to this release without further security review, operational testing, and off-server backups.
 
 ## Documentation and administrator API
 
@@ -12,6 +12,7 @@ Start with the **[documentation index](docs/README.md)**, [getting started guide
 
 Administrators can use **Admin API** to search endpoints, copy curl examples, download the OpenAPI contract and create/revoke automation tokens. Tokens have read-only or full-admin scope, 1–90 day expiry and optional source CIDRs. The secret is returned once and stored only as a hash. Token management requires an administrator session with CSRF; bearer tokens cannot create more credentials.
 
+- [Mail hosting and public DNS setup](docs/MAIL.md)
 - [API authentication and curl/Python examples](docs/API.md)
 - [Complete endpoint reference](docs/API-REFERENCE.md)
 - [OpenAPI JSON for API clients](docs/openapi.json)
@@ -27,16 +28,19 @@ Core administrator endpoints include `GET /api/admin/system`, `GET /api/admin/au
 | Telegram bots | Run polling bots as workers, or attach a domain and TLS to webhook applications; provide tokens through container environment variables |
 | Domains | Administrator domain assignment, tenant subdomains, Nginx application routing, Let's Encrypt certificates |
 | DNS | Local authoritative BIND zones; A, AAAA, CNAME, MX, TXT, and NS records |
-| Databases | MySQL-compatible MariaDB and PostgreSQL; per-database users, database-specific grants, local access and exact-IP remote access with TLS |
-| Files | Container-confined file listing, text reading, and editing |
-| Console | Unprivileged commands inside application containers; user-space package installation |
-| Schedules | Five-field cron, IANA timezones, next runs and execution history |
+| Databases | MySQL-compatible MariaDB and PostgreSQL; per-database users, database-specific grants, local access and IP/CIDR remote access with TLS |
+| Files | Workspace file browser, uploads, archive tools, separate editor, optional autosave, and safe media previews |
+| Console | Streamed unprivileged commands, completion, history, clear, and per-application program logs |
+| Schedules | Five-field cron, timing presets, IANA timezones, next runs, command tests and execution history |
 | Backups | Full `.cgp` ZIP archives with files, SQL, domain/DNS configuration; file/database restore; scheduled Telegram, S3 and SSH delivery |
 | Monitoring | HTTP availability, response times, Telegram outage/recovery alerts |
 | Analytics | Optional daily unique-IP estimates, page views, referrers, click heatmaps, technical SEO checks |
 | HTTPS / CDN | HTTP or DNS verification, automatic renewal, short-lived panel IP certificates, Cloudflare zone export |
 | SOCKS5 | Per-integration proxy routing and enforced application TCP/DNS gateways, with administrator locks |
-| Security | Argon2id, HttpOnly/SameSite sessions, CSRF checks, login throttling, ownership checks, audit records, Nginx rate/connection limits, nftables IP blocking, Fail2ban for SSH |
+| Mail | TLS SMTP/IMAP mailboxes, quotas, authenticated submission, Rspamd, DKIM and DNS guidance |
+| Services | Per-application SFTP and explicit FTPS, password rotation, IP/CIDR access rules |
+| Resource budgets | Admin tenant budgets, application CPU/RAM allocations and bounded workspace volumes |
+| Security | Optional authenticator MFA, local/provider CAPTCHA, OWASP CRS WAF, crawler policies, Argon2id, HttpOnly/SameSite sessions, CSRF checks, login throttling, ownership checks, audit records, Nginx rate/connection limits, nftables IP blocking, Fail2ban for SSH |
 
 ## Architecture
 
@@ -53,7 +57,7 @@ Browser ── HTTPS :2083 ── Nginx ── loopback :2082 ── cgpanel (un
 
 The HTTP service stores account, session, resource, and audit data in SQLite. A separate root-owned registry records the broker's resources. The broker accepts a fixed set of operations from the panel service account, validates identifiers, and checks resource ownership again. It never exposes a general host shell endpoint.
 
-Application shells run as UID 1000 inside rootless containers. Capabilities are dropped, privilege escalation is disabled, the root filesystem is read-only, and the workspace is writable. Each application is limited to 512 MiB RAM, one CPU, and 128 processes. Linux tenant accounts have no login shell and no sudo permission. The panel and agent are trusted infrastructure; container isolation is not a substitute for kernel patching or an independent security audit.
+Application shells run as UID 1000 inside rootless containers. Capabilities are dropped, privilege escalation is disabled, the root filesystem is read-only, and the workspace is writable. Application RAM and CPU are configurable within account budgets; defaults are 512 MiB and one CPU, with a 128-process limit. New application workspaces use bounded disk volumes; existing workspaces require migration to activate disk enforcement. Linux tenant accounts have no login shell and no sudo permission. The panel and agent are trusted infrastructure; container isolation is not a substitute for kernel patching or an independent security audit.
 
 ## Install on a fresh Ubuntu 24.04 server
 

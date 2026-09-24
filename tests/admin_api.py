@@ -48,7 +48,7 @@ def validate_contract(spec):
             for name in __import__('re').findall(r'{([^}]+)}',path):
                 assert any(p['name']==name and p['in']=='path' and p['required'] for p in op['parameters'])
             assert '200' in op['responses']
-    assert len(operation_ids)==len(set(operation_ids))==48
+    assert len(operation_ids)==len(set(operation_ids))==68
     def walk(value):
         if isinstance(value,dict):
             if '$ref' in value:
@@ -91,8 +91,8 @@ def main():
                 tenant.call('/api/admin/tokens',status=403)
                 tenant.call('/api/admin/tokens','POST',{'name':'denied'},status=403)
                 tenant.call('/api/docs/api',status=403)
-                assert len(tenant.call('/api/docs'))==3
-                assert len(admin.call('/api/docs'))==6
+                assert len(tenant.call('/api/docs'))==5
+                assert len(admin.call('/api/docs'))==8
                 tenant.call('/api/v4/updates',status=403)
                 for article in admin.call('/api/docs'):
                     doc=admin.call('/api/docs/'+article['slug'])

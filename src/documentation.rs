@@ -8,6 +8,18 @@ pub fn routes() -> Router<App> {
 }
 const DOCS: &[(&str, &str, &str, bool)] = &[
     (
+        "workspace-v5",
+        "Workspace, protection and recovery",
+        include_str!("../docs/V0.5-GUIDE.md"),
+        false,
+    ),
+    (
+        "mail",
+        "Mail hosting and domain setup",
+        include_str!("../docs/MAIL.md"),
+        false,
+    ),
+    (
         "workspace",
         "Files, IDE, runtimes and updates",
         include_str!("../docs/V0.4-GUIDE.md"),

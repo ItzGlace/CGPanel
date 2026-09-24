@@ -7,6 +7,13 @@ use std::{
 };
 use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
 
+struct RestoreStaging(PathBuf);
+impl Drop for RestoreStaging {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 fn checksum(path: &Path) -> Result<(u64, String)> {
     let mut file = std::fs::File::open(path)?;
     let mut hash = Sha256::new();
@@ -30,7 +37,16 @@ async fn stream(
     env: Option<(&str, &str)>,
 ) -> Result<()> {
     let mut command = Command::new(program);
-    command.args(arguments).current_dir("/").kill_on_drop(true);
+    command
+        .args(arguments)
+        .current_dir("/")
+        .kill_on_drop(true)
+        .env_clear()
+        .env(
+            "PATH",
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        )
+        .env("LC_ALL", "C");
     command.as_std_mut().process_group(0);
     if output.is_some() {
         // Bound each dump even if the source grows continuously while it is being read.
@@ -62,14 +78,40 @@ async fn stream(
     } else {
         Stdio::null()
     });
-    command.stderr(Stdio::null());
+    command.stderr(Stdio::piped());
     if let Some((key, value)) = env {
         command.env(key, value);
     }
     let mut child = command.spawn()?;
     let pid = child.id();
+    let mut stderr = child.stderr.take().context("Missing diagnostic stream")?;
+    let diagnostics = tokio::spawn(async move {
+        let mut saved = Vec::new();
+        let mut buffer = [0u8; 4096];
+        loop {
+            let n = stderr.read(&mut buffer).await.unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            let keep = n.min(4096usize.saturating_sub(saved.len()));
+            saved.extend_from_slice(&buffer[..keep]);
+        }
+        String::from_utf8_lossy(&saved).into_owned()
+    });
     match tokio::time::timeout(Duration::from_secs(600), child.wait()).await {
-        Ok(status) => ensure!(status?.success(), "Archive or database operation failed"),
+        Ok(status) => {
+            let mut diagnostic = diagnostics.await.unwrap_or_default();
+            if let Some((_, secret)) = env {
+                if !secret.is_empty() {
+                    diagnostic = diagnostic.replace(secret, "[redacted]");
+                }
+            }
+            ensure!(
+                status?.success(),
+                "Archive or database operation failed: {}",
+                diagnostic.trim()
+            );
+        }
         Err(_) => {
             if let Some(pid) = pid {
                 unsafe {
@@ -367,6 +409,7 @@ pub async fn restore(reg: &mut Registry, op: &Operation) -> Result<Value> {
         "Invalid restore job ID"
     );
     tokio::fs::create_dir_all(&staging).await?;
+    let _cleanup = RestoreStaging(staging.clone());
     let archive = PathBuf::from(format!("{ROOT}/backups/{backup_id}.cgp"));
     let folder = staging.clone();
     let manifest = tokio::task::spawn_blocking(move || -> Result<Value> {
@@ -384,6 +427,15 @@ pub async fn restore(reg: &mut Registry, op: &Operation) -> Result<Value> {
         let files = manifest["files"]
             .as_array()
             .context("Missing file manifest")?;
+        let total = files.iter().try_fold(0u64, |sum, file| {
+            sum.checked_add(file["bytes"].as_u64().unwrap_or(u64::MAX))
+                .context("Invalid archive sizes")
+        })?;
+        ensure!(
+            total <= 20 * 1024 * 1024 * 1024
+                && total.saturating_add(512 * 1024 * 1024) < backup_import::free_bytes()?,
+            "Insufficient space to stage this archive safely"
+        );
         for entry in files {
             let path = s(entry, "path");
             let valid = path == "files/workspace.tar.gz"
@@ -423,6 +475,8 @@ pub async fn restore(reg: &mut Registry, op: &Operation) -> Result<Value> {
             "Database engine changed; manual migration required"
         );
     }
+    let recovery = uuid::Uuid::new_v4().simple().to_string();
+    create(reg,&Operation{action:"full_backup_create".into(),tenant:op.tenant.clone(),id:op.id.clone(),data:json!({"job_id":recovery,"database_ids":records.iter().filter(|r|r["kind"]=="databases").map(|r|r["id"].clone()).collect::<Vec<_>>(),"quiesce":true})}).await.context("Could not create a pre-restore recovery backup; restore cancelled")?;
     let was_running = pod(
         &op.tenant,
         args(&[
@@ -437,23 +491,76 @@ pub async fn restore(reg: &mut Registry, op: &Operation) -> Result<Value> {
     .await?
     .trim()
         == "true";
-    if was_running {
+    let app = owned(reg, op, "apps")?.clone();
+    let transfer = !s(&app.data, "transfer_user").is_empty();
+    let ide_name = format!("cgp_ide_{}", op.id);
+    let ide_running = if app.data["ide_enabled"] == true {
         pod(
             &op.tenant,
-            args(&["stop", "--time", "15", &container(&op.id)]),
+            args(&["inspect", "--format", "{{.State.Running}}", &ide_name]),
             None,
-            40,
+            20,
         )
-        .await?;
+        .await?
+        .trim()
+            == "true"
+    } else {
+        false
+    };
+    let mut result = async {
+        if transfer {
+            services_agent::disable(reg, op).await?;
+        }
+        if ide_running {
+            pod(
+                &op.tenant,
+                args(&["stop", "--time", "10", &ide_name]),
+                None,
+                30,
+            )
+            .await?;
+        }
+        if was_running {
+            pod(
+                &op.tenant,
+                args(&["stop", "--time", "15", &container(&op.id)]),
+                None,
+                40,
+            )
+            .await?;
+        }
+        restore_data(reg, op, records, &staging).await?;
+        if transfer {
+            services_agent::permissions(op).await?;
+        }
+        Ok::<_, anyhow::Error>(())
     }
-    let result = restore_data(reg, op, records, &staging).await;
+    .await;
+    // Restore writers even when extraction, database loading or permission repair fails.
     if was_running {
-        let _ = pod(&op.tenant, args(&["start", &container(&op.id)]), None, 40).await;
+        let resumed = pod(&op.tenant, args(&["start", &container(&op.id)]), None, 40).await;
+        if result.is_ok() {
+            result = resumed.map(|_| ());
+        }
+    }
+    if ide_running {
+        let resumed = pod(&op.tenant, args(&["start", &ide_name]), None, 40).await;
+        if result.is_ok() {
+            result = resumed.map(|_| ());
+        }
+    }
+    if transfer {
+        let restored=services_agent::configure(reg,&Operation{action:"services_configure".into(),tenant:op.tenant.clone(),id:op.id.clone(),data:json!({"sftp":app.data["sftp_enabled"]==true,"ftps":app.data["ftps_enabled"]==true,"rotate":false,"allowed_ips":app.data["transfer_ips"].as_array().cloned().unwrap_or_default()})}).await;
+        if result.is_ok() {
+            result = restored.map(|_| ());
+        }
     }
     let _ = tokio::fs::remove_dir_all(&staging).await;
-    result?;
+    result.map_err(|error| {
+        anyhow::anyhow!("Restore failed: {error:#}. Pre-restore recovery archive: {recovery}")
+    })?;
     Ok(
-        json!({"restored":true,"scope":"workspace and selected databases","domain_configuration":"included in archive manifest; existing domain assignments retained"}),
+        json!({"restored":true,"recovery_backup":recovery,"scope":"workspace and selected databases","domain_configuration":"included in archive manifest; existing domain assignments retained"}),
     )
 }
 async fn restore_data(
@@ -462,21 +569,118 @@ async fn restore_data(
     records: &[Value],
     staging: &Path,
 ) -> Result<()> {
-    // Extraction is performed under the tenant's Linux UID, never under host root.
-    stream(
-        "runuser",
+    // Root constructs the mount namespace, then drops to the tenant UID. No host
+    // network or other workspaces are visible, including to SQL client metacommands.
+    let uid = uid(&op.tenant).await?;
+    let gid = run("id", &["-g", &user(&op.tenant)]).await?;
+    let sandbox = || {
         args(&[
-            "-u",
-            &user(&op.tenant),
-            "--",
-            "tar",
-            "-xzf",
-            "-",
-            "--no-same-owner",
-            "--no-same-permissions",
-            "-C",
+            "--unshare-pid",
+            "--unshare-net",
+            "--unshare-ipc",
+            "--unshare-uts",
+            "--die-with-parent",
+            "--new-session",
+            "--cap-add",
+            "CAP_SETUID",
+            "--cap-add",
+            "CAP_SETGID",
+            "--cap-add",
+            "CAP_SETPCAP",
+            "--ro-bind",
+            "/usr",
+            "/usr",
+            "--ro-bind",
+            "/lib",
+            "/lib",
+            "--ro-bind",
+            "/lib64",
+            "/lib64",
+            "--symlink",
+            "usr/bin",
+            "/bin",
+            "--ro-bind",
+            "/etc/passwd",
+            "/etc/passwd",
+            "--ro-bind",
+            "/etc/group",
+            "/etc/group",
+            "--ro-bind",
+            "/run/mysqld",
+            "/run/mysqld",
+            "--ro-bind",
+            "/run/postgresql",
+            "/run/postgresql",
+            "--chmod",
+            "0755",
+            "/etc",
+            "--chmod",
+            "0755",
+            "/run",
+            "--proc",
+            "/proc",
+            "--dev",
+            "/dev",
+            "--tmpfs",
+            "/tmp",
+            "--chmod",
+            "1777",
+            "/tmp",
+            "--bind",
             &appdir(&op.tenant, &op.id),
-        ]),
+            "/workspace",
+            "--chdir",
+            "/workspace",
+            "setpriv",
+            "--reuid",
+            &uid,
+            "--regid",
+            gid.trim(),
+            "--clear-groups",
+            "--no-new-privs",
+            "--bounding-set=-all",
+            "--inh-caps=-all",
+            "--ambient-caps=-all",
+        ])
+    };
+    let mut verify = sandbox();
+    verify.extend(args(&["tar", "-tzf", "-"]));
+    stream(
+        "bwrap",
+        verify,
+        None,
+        Some(&staging.join("files/workspace.tar.gz")),
+        None,
+    )
+    .await
+    .context("Invalid workspace archive; existing files retained")?;
+    // Recreate archived entries with the tenant's identity, including files originally
+    // uploaded through SFTP. Only the bound workspace is writable in this namespace.
+    let mut clear = sandbox();
+    clear.extend(args(&[
+        "find",
+        "/workspace",
+        "-xdev",
+        "-mindepth",
+        "1",
+        "-delete",
+    ]));
+    stream("bwrap", clear, None, None, None)
+        .await
+        .context("Could not clear workspace for restore")?;
+    let mut extract = sandbox();
+    extract.extend(args(&[
+        "tar",
+        "-xzf",
+        "-",
+        "--no-same-owner",
+        "--no-same-permissions",
+        "-C",
+        "/workspace",
+    ]));
+    stream(
+        "bwrap",
+        extract,
         None,
         Some(&staging.join("files/workspace.tar.gz")),
         None,
@@ -489,42 +693,41 @@ async fn restore_data(
         let password = s(&item.data, "password");
         let input = staging.join(format!("sql/{id}.sql"));
         if s(&item.data, "engine") == "mysql" {
+            let mut command = sandbox();
+            command.extend(args(&[
+                "mariadb",
+                "--binary-mode",
+                "--local-infile=0",
+                "--socket=/run/mysqld/mysqld.sock",
+                "--user",
+                &name,
+                &name,
+            ]));
             stream(
-                "runuser",
-                args(&[
-                    "-u",
-                    &user(&op.tenant),
-                    "--",
-                    "mariadb",
-                    "--binary-mode",
-                    "--local-infile=0",
-                    "--user",
-                    &name,
-                    &name,
-                ]),
+                "bwrap",
+                command,
                 None,
                 Some(&input),
                 Some(("MYSQL_PWD", password)),
             )
             .await?;
         } else {
+            let mut command = sandbox();
+            command.extend(args(&[
+                "/usr/lib/postgresql/16/bin/psql",
+                "-X",
+                "--set",
+                "ON_ERROR_STOP=1",
+                "--host",
+                "/run/postgresql",
+                "--username",
+                &name,
+                "--dbname",
+                &name,
+            ]));
             stream(
-                "runuser",
-                args(&[
-                    "-u",
-                    &user(&op.tenant),
-                    "--",
-                    "psql",
-                    "-X",
-                    "--set",
-                    "ON_ERROR_STOP=1",
-                    "--host",
-                    "127.0.0.1",
-                    "--username",
-                    &name,
-                    "--dbname",
-                    &name,
-                ]),
+                "bwrap",
+                command,
                 None,
                 Some(&input),
                 Some(("PGPASSWORD", password)),

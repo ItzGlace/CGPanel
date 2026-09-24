@@ -491,7 +491,7 @@ export function features(ctx) {
     panel().innerHTML =
       toolbar(
         account,
-        button("Automatic backups", "backup-plan") +
+        button("Upload .cgp", "backup-import") + button("Automatic backups", "backup-plan") +
           button("Full .cgp backup", "backup-create", "", true),
       ) +
       note(
@@ -876,6 +876,16 @@ export function features(ctx) {
             await integrationPage();
           },
         );
+      if(action==='backup-import'){
+        const choices=apps.filter(a=>a.owner===owner);
+        if(!choices.length)throw new Error('Choose an account with an application first.');
+        modal('Upload a .cgp backup',select('app_id','Original application',choices.map(a=>[a.id,a.name]))+'<label class="block text-xs text-slate-500">Archive<input id="backup-upload" type="file" accept=".cgp" required class="my-3 block w-full rounded-lg border border-slate-200 p-3"></label><p class="text-xs leading-6 text-slate-500">Uploads up to 2 GiB. The archive must belong to this account and application. After upload, choose Restore in the backup list. Restores create a recovery backup before changing files or databases.</p><p id="backup-upload-state" class="mt-3 text-xs text-emerald-700" role="status"></p>','Upload archive',async value=>{
+          const file=$('#backup-upload').files[0],status=$('#backup-upload-state');if(!file||!file.name.toLowerCase().endsWith('.cgp'))throw new Error('Choose a .cgp file.');
+          const endpoint='/v5/apps/'+value.app_id+'/backup-import';const begin=await api(endpoint,'POST',{operation:'begin',size:file.size});let complete=false;
+          try{for(let at=0;at<file.size;){const bytes=new Uint8Array(await file.slice(at,at+196608).arrayBuffer());let raw='';for(let i=0;i<bytes.length;i+=8192)raw+=String.fromCharCode(...bytes.subarray(i,i+8192));const next=await api(endpoint,'POST',{operation:'chunk',upload:begin.upload,offset:at,data:btoa(raw)});at=next.next;status.textContent='Uploading '+Math.round(at/file.size*100)+'%';}await api(endpoint,'POST',{operation:'finish',upload:begin.upload});complete=true;$('#dialog').close();if(getCurrent()==='backup-center')await backupCenter();toast('Archive uploaded. Choose Restore to apply it.');}
+          finally{if(!complete)await api(endpoint,'POST',{operation:'cancel',upload:begin.upload}).catch(()=>{});}
+        });
+      }
       if (action === "backup-create") await backupForm();
       if (action === "backup-plan") await backupForm(true);
       if (action === "plan-remove")
@@ -919,7 +929,7 @@ export function features(ctx) {
         const backup = backups.find((b) => b.id === id);
         modal(
           "Restore website backup",
-          `<p class="mb-4 text-xs leading-6 text-amber-800">The application will stop while its files and selected database contents are restored. This overwrites current data. Create a fresh backup first if you need to preserve the current version.</p>` +
+          `<p class="mb-4 text-xs leading-6 text-amber-800">The application, IDE and file-transfer access pause during restore. The workspace is replaced with the archived files, including removing files created later, and selected database contents are overwritten. A fresh recovery backup is created automatically before restoring. Domain ownership stays unchanged; archive domain and DNS metadata remains available for administrator review.</p>` +
             input("confirm", "Type RESTORE"),
           "Restore",
           async (v) =>

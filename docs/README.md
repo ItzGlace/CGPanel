@@ -16,3 +16,7 @@ CGPanel is a Rust hosting panel for a dedicated development server. Start with t
 | [v0.2 jobs and diagrams](RELEASE-0.2.md) | Implementation plan and feature verification evidence |
 
 The OpenAPI document and endpoint reference are generated together by `python3 scripts/build_api_docs.py`. CI runs `python3 scripts/build_api_docs.py --check` to catch stale generated documents. Update the generator alongside endpoint changes, and run the isolated `tests/admin_api.py` suite against a built binary when changing authentication or token behavior. It uses a temporary database and loopback listener; no live credentials or host broker are required.
+
+- [Mail hosting](MAIL.md): mailbox setup, TLS, DNS, delivery security and API operations.
+
+- [Version 0.5 workspace guide](V0.5-GUIDE.md): services, budgets, recovery, console, protections and MFA.

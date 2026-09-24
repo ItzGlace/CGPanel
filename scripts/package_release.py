@@ -8,8 +8,9 @@ output=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else root/'dist');output.mkdi
 with tempfile.TemporaryDirectory() as temp:
     stage=pathlib.Path(temp);(stage/'bin').mkdir();(stage/'deploy').mkdir()
     for name in ('cgpanel','cgpanel-agent','cgpanel-workspace','cgpanel-egress','cgpanel-acme-hook'):shutil.copy2(target/name,stage/'bin'/name)
-    for name in ('updater.py','apply-release.py','setup-v0.4.py','harden-sftp.py'):shutil.copy2(root/'deploy'/name,stage/'deploy'/name)
+    for name in ('updater.py','apply-release.py','setup-v0.4.py','setup-v0.5.py','workspace-volume.py','harden-sftp.py','setup-mail.py','mail-config.py','adopt-sftp.py','reload-nginx'):shutil.copy2(root/'deploy'/name,stage/'deploy'/name)
     shutil.copytree(root/'deploy/php-runtime',stage/'deploy/php-runtime')
+    shutil.copytree(root/'deploy/waf',stage/'deploy/waf')
     (stage/'manifest.json').write_text(json.dumps({'version':version,'platform':'ubuntu-24.04-x86_64'}))
     archive=output/f'CGPanel-v{version}-linux-x86_64.tar.gz'
     with tarfile.open(archive,'w:gz') as tar:

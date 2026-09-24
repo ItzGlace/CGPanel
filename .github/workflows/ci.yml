@@ -22,7 +22,8 @@ jobs:
       - run: cargo test --locked
       - run: cargo build --locked --bin cgpanel-workspace && python3 tests/workspace.py
       - run: cargo build --locked --bin cgpanel && python3 tests/admin_api.py
-      - run: python3 tests/sftp_policy.py
+      - run: python3 tests/analytics.py && python3 tests/mfa.py && python3 tests/protection.py
+      - run: python3 tests/sftp_policy.py && python3 tests/firewall_migration.py
       - run: python3 -m py_compile tests/*.py deploy/*.py
       - run: python3 scripts/build_api_docs.py --check
       - run: bash -n deploy/install.sh deploy/install-features.sh deploy/upgrade-v0.2.sh deploy/reload-nginx

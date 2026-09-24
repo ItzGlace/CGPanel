@@ -25,7 +25,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 /usr/local/lib/cgpanel/updater.py {mode}
-TimeoutStartSec=20min
+TimeoutStartSec=35min
 UMask=0077
 ''')
 pathlib.Path('/etc/systemd/system/cgpanel-auto-update.timer').write_text('''[Unit]
@@ -42,3 +42,4 @@ subprocess.run(['nginx','-t'],check=True)
 subprocess.run(['systemctl','daemon-reload'],check=True)
 subprocess.run(['systemctl','enable','--now','cgpanel-auto-update.timer'],check=True)
 subprocess.run(['systemctl','reload','nginx'],check=True)
+subprocess.run(['python3',str(root/'deploy/setup-v0.5.py'),str(root)],check=True)

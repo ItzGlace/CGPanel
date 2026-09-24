@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+pub mod network;
 pub mod outbound;
 pub mod s3_upload;
 pub mod schedule;
@@ -14,6 +15,45 @@ pub struct Operation {
     pub tenant: String,
     pub id: String,
     pub data: Value,
+}
+
+/// Client-supplied application properties must never become broker-owned service
+/// metadata (OS account names, IDE ports, credentials, or transfer configuration).
+pub fn application_input(value: &Value) -> Value {
+    let allowed = [
+        "name",
+        "runtime",
+        "version",
+        "mode",
+        "command",
+        "env",
+        "memory_mb",
+        "cpu_millis",
+        "disk_mb",
+    ];
+    Value::Object(
+        value
+            .as_object()
+            .into_iter()
+            .flat_map(|m| m.iter())
+            .filter(|(key, _)| allowed.contains(&key.as_str()))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod application_input_tests {
+    #[test]
+    fn service_metadata_cannot_be_injected() {
+        let value = super::application_input(
+            &serde_json::json!({"name":"site","runtime":"php","transfer_user":"root","ide_enabled":true,"ide_port":22,"port":22,"image":"untrusted","memory_mb":128}),
+        );
+        assert_eq!(
+            value,
+            serde_json::json!({"name":"site","runtime":"php","memory_mb":128})
+        );
+    }
 }
 
 pub fn identifier(s: &str) -> bool {

@@ -1,6 +1,7 @@
 ARG PHP_VERSION=8.4
 ARG PHP_REGISTRY=docker.io
-FROM ${PHP_REGISTRY}/library/php:${PHP_VERSION}-fpm-bookworm
+ARG PHP_BASE_TAG=8.4-fpm-bookworm
+FROM ${PHP_REGISTRY}/library/php:${PHP_BASE_TAG}
 RUN apt-get update && apt-get install -y --no-install-recommends nginx-light ca-certificates \
     && docker-php-ext-install -j1 pdo_mysql mysqli \
     && if ! php -m | grep -q 'Zend OPcache'; then docker-php-ext-install -j1 opcache; fi \

@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const script = document.currentScript;
-  if (!script || navigator.doNotTrack === "1" || window.doNotTrack === "1")
+  if (!script || navigator.doNotTrack === "1" || window.doNotTrack === "1" || navigator.globalPrivacyControl === true)
     return;
   const site = script.dataset.site,
     key = script.dataset.key;
@@ -18,10 +18,9 @@
       viewport: innerWidth < 768 ? "mobile" : "desktop",
       ...event,
     });
-    navigator.sendBeacon(
-      endpoint,
-      new Blob([body], { type: "application/json" }),
-    );
+    const payload=new Blob([body], { type: "text/plain;charset=UTF-8" });
+    if (!navigator.sendBeacon?.(endpoint,payload))
+      fetch(endpoint,{method:"POST",body:payload,mode:"no-cors",credentials:"omit",keepalive:true}).catch(()=>{});
   };
   const page = () => {
     let referrer = "";

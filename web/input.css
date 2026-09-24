@@ -4,7 +4,24 @@
 @source "./app.js";
 @source "./icons.js";
 @source "./features.js";
+@source "./workspace.js";
+@source "./comingsoon.html";
+@source "../src/protection.rs";
 @theme {
+  --color-emerald-50: #edf9f7;
+  --color-emerald-100: #d3f0eb;
+  --color-emerald-200: #b4e7df;
+  --color-emerald-300: #99E1D9;
+  --color-emerald-400: #69bbb1;
+  --color-emerald-500: #438f86;
+  --color-emerald-600: #35766e;
+  --color-emerald-700: #2b615b;
+  --color-emerald-800: #254d49;
+  --color-emerald-900: #32292F;
+  --color-red-50: #fff1f4;
+  --color-red-100: #fbdce5;
+  --color-amber-50: #fff9eb;
+  --color-amber-100: #f8edcf;
   --animate-enter: enter 280ms ease-out both;
   @keyframes enter {
     from {
@@ -17,6 +34,9 @@
     }
   }
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --color-forest: #132e29;
-  --color-mint: #c3f092;
+  --color-forest: #32292F;
+  --color-mint: #99E1D9;
 }
+
+@source "./mail.js";
+@source "./nav-icons.js";

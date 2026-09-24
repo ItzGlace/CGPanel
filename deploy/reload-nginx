@@ -2,3 +2,9 @@
 set -eu
 /usr/sbin/nginx -t
 /usr/bin/systemctl reload nginx
+# Mail daemons must reopen renewed certificate files as well.
+for service in postfix dovecot; do
+    if /usr/bin/systemctl is-active --quiet "$service"; then
+        /usr/bin/systemctl reload "$service"
+    fi
+done

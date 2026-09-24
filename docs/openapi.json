@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "CGPanel Administrator and Management API",
-    "version": "0.4.1",
+    "version": "0.5.0",
     "description": "Community alpha. Session + CSRF or administrator bearer tokens. See docs/API.md for operational boundaries.",
     "license": {
       "name": "AGPL-3.0-or-later",
@@ -2673,6 +2673,1295 @@
           }
         ]
       }
+    },
+    "/api/v5/apps/{id}/console": {
+      "post": {
+        "operationId": "post_api_v5_apps_id_console",
+        "summary": "Stream application command output",
+        "tags": [
+          "Workspace"
+        ],
+        "description": "Owned application. Runs a container command for at most 25 seconds. Newline-delimited JSON output, bounded to 2 MiB. Disconnect cancels the command.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "command"
+                ]
+              },
+              "example": {
+                "command": "printf hello"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/network-range": {
+      "post": {
+        "operationId": "post_api_v5_network_range",
+        "summary": "Preview IP and CIDR ranges",
+        "tags": [
+          "Workspace"
+        ],
+        "description": "Returns canonical first and last addresses or validation errors for comma/newline-separated inputs.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value"
+                ]
+              },
+              "example": {
+                "value": "10.10.10.0/24"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/apps/{id}/git": {
+      "post": {
+        "operationId": "post_api_v5_apps_id_git",
+        "summary": "Workspace Git tools",
+        "tags": [
+          "Workspace"
+        ],
+        "description": "Owned application; fixed status, history, diff or init operations. Full Git is available inside the IDE.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "example": {
+                "operation": "status"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/apps/{id}/services": {
+      "get": {
+        "operationId": "get_api_v5_apps_id_services",
+        "summary": "Transfer service settings",
+        "tags": [
+          "Workspace"
+        ],
+        "description": "Owned application. Returns SFTP and FTPS status, username, directory and IP restrictions.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_api_v5_apps_id_services",
+        "summary": "Configure SFTP and FTPS",
+        "tags": [
+          "Workspace"
+        ],
+        "description": "Owned application. FTPS requires explicit TLS. A new or rotated password is returned once. Existing sessions close when access is disabled or credentials rotate.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sftp": {
+                    "type": "boolean"
+                  },
+                  "ftps": {
+                    "type": "boolean"
+                  },
+                  "rotate": {
+                    "type": "boolean"
+                  },
+                  "allowed_ips": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "sftp",
+                  "ftps"
+                ]
+              },
+              "example": {
+                "sftp": true,
+                "ftps": false,
+                "rotate": false,
+                "allowed_ips": [
+                  "203.0.113.0/24"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/users/{id}/budget": {
+      "get": {
+        "operationId": "get_api_v5_users_id_budget",
+        "summary": "Read account resource budget",
+        "tags": [
+          "Resources"
+        ],
+        "description": "Own account or administrator. Returns budget, allocated, remaining, and per-application enforcement.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_api_v5_users_id_budget",
+        "summary": "Set account resource budget",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. Cannot set below existing allocations. Disk covers application workspaces, not mail, databases or container images.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "memory_mb": {
+                    "type": "integer"
+                  },
+                  "cpu_millis": {
+                    "type": "integer"
+                  },
+                  "disk_mb": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "memory_mb",
+                  "cpu_millis",
+                  "disk_mb"
+                ]
+              },
+              "example": {
+                "memory_mb": 2048,
+                "cpu_millis": 2000,
+                "disk_mb": 4096
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/apps/{id}/limits": {
+      "post": {
+        "operationId": "post_api_v5_apps_id_limits",
+        "summary": "Allocate application resources",
+        "tags": [
+          "Resources"
+        ],
+        "description": "Owned running application. Allocations must fit account budget. Workspace migration/growth briefly stops its app and IDE; disk shrinking is rejected.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "memory_mb": {
+                    "type": "integer"
+                  },
+                  "cpu_millis": {
+                    "type": "integer"
+                  },
+                  "disk_mb": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "memory_mb",
+                  "cpu_millis",
+                  "disk_mb"
+                ]
+              },
+              "example": {
+                "memory_mb": 512,
+                "cpu_millis": 1000,
+                "disk_mb": 1024
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/apps/{id}/backup-import": {
+      "post": {
+        "operationId": "post_api_v5_apps_id_backup_import",
+        "summary": "Upload a cgp archive",
+        "tags": [
+          "Backups"
+        ],
+        "description": "Owned application. begin supplies size and returns upload; chunk supplies upload, offset and base64 data (at most 196608 decoded bytes); finish validates ownership and registers the archive; cancel removes a partial upload. Limit 2 GiB and two active uploads. Restore is a separate v2 job.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "example": {
+                "operation": "begin",
+                "size": 1048576
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/protection/{id}": {
+      "get": {
+        "operationId": "get_api_v5_protection_id",
+        "summary": "Website protection settings",
+        "tags": [
+          "Security"
+        ],
+        "description": "Owned domain. Provider secret is omitted; secret_set indicates an existing secret.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_api_v5_protection_id",
+        "summary": "Configure website protections",
+        "tags": [
+          "Security"
+        ],
+        "description": "Owned domain. WAF off/detect/enforce; crawlers allow/block_ai/block_all; CAPTCHA off/local/turnstile/hcaptcha/recaptcha. Blank provider secret preserves current. CAPTCHA gates site pages and may affect APIs or webhooks. Rate controls cannot absorb upstream network saturation.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "example": {
+                "requests_per_second": 20,
+                "connections": 30,
+                "waf": "detect",
+                "crawlers": "allow",
+                "captcha": "off",
+                "site_key": "",
+                "secret": "",
+                "sitemap": true,
+                "sitemap_paths": [
+                  "/"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/protection/{id}/traffic": {
+      "get": {
+        "operationId": "get_api_v5_protection_id_traffic",
+        "summary": "Recent traffic summary",
+        "tags": [
+          "Security"
+        ],
+        "description": "Owned domain. Aggregates most recent 2000 logged requests, not a fixed time window. Unusual flags are heuristics, not proof of an attack.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v5/mfa": {
+      "get": {
+        "operationId": "get_api_v5_mfa",
+        "summary": "Own MFA status",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Includes count of remaining recovery codes.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/mfa/enroll": {
+      "post": {
+        "operationId": "post_api_v5_mfa_enroll",
+        "summary": "Begin authenticator enrollment",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Browser session, CSRF and current password. Returns secret and otpauth URL; expires in ten minutes.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "password"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/mfa/confirm": {
+      "post": {
+        "operationId": "post_api_v5_mfa_confirm",
+        "summary": "Confirm authenticator enrollment",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Browser session and CSRF. Activates a valid six-digit code, revokes other sessions and returns one-time recovery codes.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/mfa/disable": {
+      "post": {
+        "operationId": "post_api_v5_mfa_disable",
+        "summary": "Disable own MFA",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Browser session and CSRF. Requires current password and a valid authenticator/recovery code.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "password",
+                  "code"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/mail": {
+      "get": {
+        "operationId": "get_api_v5_mail",
+        "summary": "Mail hosting status",
+        "tags": [
+          "Mail"
+        ],
+        "description": "Tenants see their domains and mailbox metadata; administrators see all. No password hashes are returned. See bundled mail guide for DNS, TLS and provider requirements.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/mail/server": {
+      "post": {
+        "operationId": "post_api_v5_mail_server",
+        "summary": "Configure mail server",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. Set this VPS hostname, matching certificate domain ID, and public port state. Empty certificate_domain selects the development self-signed certificate.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "hostname": {
+                    "type": "string"
+                  },
+                  "certificate_domain": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "hostname",
+                  "enabled"
+                ]
+              },
+              "example": {
+                "hostname": "mail.example.com",
+                "certificate_domain": "DOMAIN_ID",
+                "enabled": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/mail/domains/{id}": {
+      "post": {
+        "operationId": "post_api_v5_mail_domains_id",
+        "summary": "Enable domain mail",
+        "tags": [
+          "Mail"
+        ],
+        "description": "Owned domain or administrator. Enable generates DKIM keys; disable requires all its mailboxes to be disabled.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "example": {
+                "enabled": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/mail/mailboxes": {
+      "post": {
+        "operationId": "post_api_v5_mail_mailboxes",
+        "summary": "Create or update mailbox",
+        "tags": [
+          "Mail"
+        ],
+        "description": "Owned mail-enabled domain. Omit id to create; include id to update. Blank password on update preserves current. Quota 64–102400 MiB, maximum 30 mailboxes per tenant. Disable preserves messages.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "domain_id": {
+                    "type": "string"
+                  },
+                  "local": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "quota_mb": {
+                    "type": "integer"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "domain_id",
+                  "local",
+                  "quota_mb",
+                  "enabled"
+                ]
+              },
+              "example": {
+                "domain_id": "DOMAIN_ID",
+                "local": "hello",
+                "password": "PRIVATE_PASSWORD",
+                "quota_mb": 512,
+                "enabled": true
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2714,6 +4003,10 @@
           "password": {
             "type": "string",
             "format": "password"
+          },
+          "code": {
+            "type": "string",
+            "description": "Authenticator or unused recovery code when MFA is enabled."
           }
         },
         "required": [
@@ -3164,6 +4457,18 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "memory_mb": {
+            "type": "integer"
+          },
+          "cpu_millis": {
+            "type": "integer"
+          },
+          "disk_mb": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
           }
         },
         "required": [

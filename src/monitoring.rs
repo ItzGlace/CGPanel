@@ -104,8 +104,11 @@ async fn collect(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(rid): Path<String>,
     headers: HeaderMap,
-    Json(value): Json<Value>,
+    body: axum::body::Bytes,
 ) -> Result<StatusCode, Error> {
+    // text/plain JSON permits sendBeacon across the website/panel origins without
+    // a CORS preflight. Authentication still requires the configured site and Origin.
+    let value: Value = serde_json::from_slice(&body).map_err(|_| bad("Invalid event JSON"))?;
     if !identifier(&rid) || rid.len() != 32 {
         return Err(bad("Invalid site"));
     }

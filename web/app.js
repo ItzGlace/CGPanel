@@ -1,3 +1,5 @@
+import { navIcon } from "/nav-icons.js";
+import { mailPanel } from "/mail.js";
 import { workspaceTools } from "/workspace.js";
 import { features } from "/features.js";
 import { documentation } from "/documentation.js";
@@ -21,6 +23,12 @@ let me,
   pending = false;
 const tools4 = workspaceTools({api,esc,glyph,toast,getCurrent:()=>current,getMe:()=>me});
 const pages = {
+  mail: ["Mail hosting", "Mailboxes, delivery security, and domain setup.", "mail"],
+  services: ["Services", "Manage secure file-transfer access for each workspace.", "network"],
+  "program-logs": ["Program logs", "Application output and errors, with automatic refresh.", "logs"],
+  protection: ["Website protection", "Traffic limits, WAF, crawler policies, and request patterns.", "shield-check"],
+  captcha: ["CAPTCHA", "Verify visitors locally or with your chosen provider.", "key-round"],
+  editor: ["File editor", "Edit your workspace files with conflict protection.", "file-text"],
   ide: ["Workspace IDE", "Code, install extensions, and manage Git in your browser.", "folder-code"],
   runtimes: ["Runtime versions", "Choose the language version for each application.", "boxes"],
   updates: ["Panel updates", "Manage automatic updates from stable GitHub releases.", "settings"],
@@ -182,6 +190,7 @@ async function boot() {
     $("#panel").hidden = false;
     nav();
     await render();
+    if(!localStorage.getItem("cgp-tour-v5-"+me.id)) startTour();
   } catch (e) {
     showLogin();
   }
@@ -210,8 +219,9 @@ function nav() {
     "dns",
     "files",
     "ide",
-    "runtimes",
+    "services", "mail", "runtimes",
     "terminal",
+    "program-logs",
     "schedules",
     "backup-center",
     "monitoring",
@@ -220,6 +230,8 @@ function nav() {
     "integrations",
     "egress",
     "jobs",
+    "protection",
+    "captcha",
     "security",
     ...(me.role === "admin" ? ["users", "blocks", "admin-api", "updates"] : []),
     "audit",
@@ -228,7 +240,7 @@ function nav() {
   $("#nav").innerHTML = keys
     .map(
       (k, i) =>
-        `<a href="#${k}" data-nav="${k}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-[12px] text-emerald-50/50 transition motion-reduce:transition-none hover:bg-white/5 hover:text-white [&.active]:bg-mint/10 [&.active]:text-mint ${i === 9 ? "nav-group mt-5 border-t border-white/10 pt-5" : ""}"><span class="nav-icon">${glyph(pages[k][2], "size-[18px]")}</span>${pages[k][0]}</a>`,
+        `<a href="#${k}" data-nav="${k}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-[12px] text-emerald-50/50 transition motion-reduce:transition-none hover:bg-white/5 hover:text-white [&.active]:bg-mint/10 [&.active]:text-mint ${i === 9 ? "nav-group mt-5 border-t border-white/10 pt-5" : ""}"><span class="nav-icon">${navIcon(k)}</span>${pages[k][0]}</a>`,
     )
     .join("");
 }
@@ -247,13 +259,15 @@ async function render() {
   const epoch = ++renderEpoch;
   routeController?.abort();
   routeController = new AbortController();
-  current = location.hash.slice(1) || "home";
+  current = location.hash.slice(1).split("?")[0] || "home";
   if (!pages[current]) current = "home";
   $(".sidebar").classList.remove("open");
   document
     .querySelectorAll("[data-nav]")
     .forEach((a) => a.classList.toggle("active", a.dataset.nav === current));
   const [title, description] = pages[current];
+  document.querySelector('#app-help')?.remove();
+  if(current==='apps'){const help=document.createElement('button');help.id='app-help';help.dataset.helpApp='';help.className='mt-3 rounded-lg border border-emerald-200 bg-white/60 px-3 py-2 text-xs text-emerald-700';help.textContent='What is an application?';$('#page-description').after(help)}
   $("#page-title").textContent = title;
   $("#breadcrumb").textContent = title;
   $("#page-description").textContent = description;
@@ -289,11 +303,15 @@ async function render() {
     if (me.role === "admin" && !userList.length) userList = await api("/users");
     if (epoch !== renderEpoch) return;
     if (current === "home") await dashboard();
+    else if (["protection","captcha"].includes(current)) await protectionPage();
     else if (current === "security") security();
     else if (current === "audit") await auditPage();
-    else if (["files","ide","runtimes","updates"].includes(current)) await tools4.render(current);
+    else if (["files","editor","ide","runtimes","updates"].includes(current)) await tools4.render(current);
     else if (current === "terminal") await workspace(current);
-    else if (current === "settings") settings();
+    else if (current === "program-logs") await programLogs();
+    else if (current === "services") await servicesPage();
+    else if (current === "mail") await mailPanel({api,esc,modal,input,select,getMe:()=>me,toast}).render();
+    else if (current === "settings") await settings();
     else if (current === "docs" || current === "admin-api")
       await docs.render(current);
     else if (
@@ -316,12 +334,62 @@ async function render() {
       `<div class="info-box mb-5 rounded-xl border px-5 py-4 text-xs leading-6 warning-box border-amber-200/60 bg-amber-50/60 text-amber-900/65">${esc(e.message)}</div>`;
   }
 }
+function budgetSummary(budget){return '<div class="mb-5 grid grid-cols-3 gap-3">'+[['memory_mb','RAM','MiB',1],['cpu_millis','CPU','cores',1000],['disk_mb','Disk','MiB',1]].map(([key,label,unit,scale])=>'<div class="rounded-xl border border-emerald-100 bg-white/70 p-4"><p class="text-xs text-slate-500">'+label+' available</p><p class="mt-2 text-lg font-semibold">'+(budget.free[key]/scale)+' <span class="text-xs font-normal">'+unit+'</span></p><p class="mt-1 text-[10px] text-slate-400">'+(budget.allocated[key]/scale)+' / '+(budget.total[key]/scale)+' allocated</p></div>').join('')+'</div>'}
+async function editBudget(uid){const budget=await api('/v5/users/'+uid+'/budget');modal('Account resource budget',budgetSummary(budget)+input('memory_mb','Total RAM (MiB)','number','Includes running IDE reservations.',budget.total.memory_mb)+input('cpu_millis','Total CPU (millicores)','number','1000 = one CPU core.',budget.total.cpu_millis)+input('disk_mb','Total workspace disk (MiB)','number',budget.disk_scope,budget.total.disk_mb),'Save budget',async value=>{await api('/v5/users/'+uid+'/budget','POST',Object.fromEntries(Object.entries(value).map(([k,v])=>[k,Number(v)])));$('#dialog').close();toast('Account resource budget saved.')})}
+document.addEventListener('click',e=>{const button=e.target.closest('[data-budget]');if(button)editBudget(button.dataset.budget).catch(e=>toast(e.message))});
+async function servicesPage(){
+  const apps=await api('/resources/apps');const entries=await Promise.all(apps.map(async app=>({app,info:await api('/v5/apps/'+app.id+'/services')})));
+  $('#content').innerHTML='<div class="grid gap-5 xl:grid-cols-2">'+entries.map(({app,info})=>'<section class="rounded-2xl border border-white/80 bg-white/75 p-6"><h2 class="text-lg font-semibold">'+esc(app.name)+'</h2><div class="my-5 grid grid-cols-2 gap-3"><div class="rounded-xl bg-emerald-50 p-4 text-sm">SFTP · '+(info.sftp?'Enabled':'Disabled')+'<p class="mt-2 text-xs text-slate-500">SSH · Port 22</p></div><div class="rounded-xl bg-emerald-50 p-4 text-sm">FTPS · '+(info.ftps?'Enabled':'Disabled')+'<p class="mt-2 text-xs text-slate-500">Explicit TLS · Port 21</p></div></div><dl class="space-y-2 text-xs text-slate-600"><div>Host: <code>'+esc(info.host)+'</code></div><div>Username: <code>'+esc(info.username)+'</code></div><div>Directory: <code>'+esc(info.directory)+'</code></div></dl><p class="my-5 text-xs leading-6 text-slate-500">'+esc(info.note)+' Use the server IP in your transfer client; ordinary Cloudflare proxying does not carry FTP or SSH.</p><div class="flex gap-3"><button data-service="'+app.id+'" class="rounded-xl bg-forest px-4 py-2.5 text-xs text-white">Manage access</button><button data-transfer-rotate="'+app.id+'" class="rounded-xl border border-slate-200 px-4 py-2.5 text-xs">Reset password</button></div></section>').join('')+'</div>';
+  if(!apps.length)$('#content').textContent='Create an application to manage its file-transfer services.';
+  const edit=(id,rotate)=>{const {app,info}=entries.find(e=>e.app.id===id);modal('Transfer access · '+app.name,
+    '<label class="mb-4 flex items-center gap-3 text-sm"><input type="checkbox" name="sftp" '+(info.sftp?'checked':'')+'> Enable SFTP</label><label class="mb-4 flex items-center gap-3 text-sm"><input type="checkbox" name="ftps" '+(info.ftps?'checked':'')+'> Enable FTPS (explicit TLS)</label>'+textarea('allowed_ips','Allowed client IPs or prefixes','Blank allows any client address. Connections are confined to this application workspace.',(info.allowed_ips||[]).join('\n'))+'<p class="text-xs leading-6 text-slate-500">Changing access closes existing transfer sessions. '+(rotate?'This also generates a new password.':'A password is generated when this account is first created.')+'</p>',rotate?'Save and reset password':'Save access',async value=>{
+      const result=await api('/v5/apps/'+id+'/services','POST',{sftp:!!value.sftp,ftps:!!value.ftps,rotate,allowed_ips:value.allowed_ips.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean)});$('#dialog').close();await servicesPage();if(result.password)modal('Save your transfer password','<p class="mb-4 text-sm">Username: '+esc(result.username)+'</p><input readonly class="w-full rounded-xl border border-slate-200 p-3 font-mono text-xs" value="'+esc(result.password)+'"><p class="mt-4 text-xs text-slate-500">This password is shown once. It is separate from your panel password.</p>','',null);else toast('Transfer access saved.');
+    });};
+  document.querySelectorAll('[data-service]').forEach(b=>b.onclick=()=>edit(b.dataset.service,false));document.querySelectorAll('[data-transfer-rotate]').forEach(b=>b.onclick=()=>edit(b.dataset.transferRotate,true));
+}
+async function programLogs(){
+  const apps=await api('/resources/apps');if(!apps.length){$('#content').textContent='Create an application to view its logs.';return}
+  const saved=sessionStorage.getItem('cg-app');let chosen=apps.find(a=>a.id===saved)?.id||apps[0].id;
+  $('#content').innerHTML='<section class="overflow-hidden rounded-2xl border border-white/70 bg-white/75"><header class="flex flex-wrap items-center gap-4 p-5"><select id="logs-app" class="rounded-lg border border-slate-200 p-2 text-xs">'+apps.map(a=>'<option value="'+a.id+'" '+(a.id===chosen?'selected':'')+'>'+esc(a.name)+' · '+esc(a.data.runtime)+'</option>').join('')+'</select><label class="flex items-center gap-2 text-xs"><input id="logs-live" type="checkbox" checked> Refresh every 3 seconds</label><button id="logs-refresh" class="rounded-lg border border-slate-200 px-3 py-2 text-xs">Refresh</button><span id="logs-state" class="text-xs text-slate-500"></span></header><pre id="program-output" class="h-[560px] overflow-auto whitespace-pre-wrap break-words bg-forest p-6 font-mono text-xs leading-6 text-emerald-50" aria-live="polite"></pre><p class="p-5 text-xs leading-6 text-slate-500">Last 200 lines from your application’s stdout and stderr. Configure your framework to log to stderr/stdout; errors written only to project log files are available in File manager. Secrets printed by your code also appear here.</p></section>';
+  const output=$('#program-output');let active=false;const refresh=async()=>{if(active||current!=='program-logs'||!output.isConnected)return;active=true;const selected=chosen;try{const result=await api('/resource/'+chosen+'/logs','POST',{});if(!output.isConnected||selected!==chosen)return;const pinned=output.scrollHeight-output.scrollTop-output.clientHeight<40;output.textContent=result.output||'No application output yet.';if(pinned)output.scrollTop=output.scrollHeight;$('#logs-state').textContent='Updated '+new Date().toLocaleTimeString()}catch(e){if(output.isConnected)$('#logs-state').textContent=e.message}finally{active=false}};
+  $('#logs-app').onchange=e=>{chosen=e.target.value;sessionStorage.setItem('cg-app',chosen);output.textContent='';refresh()};$('#logs-refresh').onclick=refresh;await refresh();
+  const timer=setInterval(()=>{if(!output.isConnected){clearInterval(timer);return}if($('#logs-live').checked)refresh()},3000);
+}
+async function protectionPage(){
+  const domains=await api('/resources/domains');
+  if(!domains.length){$('#content').innerHTML='<p class="rounded-xl bg-white/70 p-8 text-sm text-slate-500">Add an assigned domain to configure website protection.</p>';return}
+  const chosen=sessionStorage.getItem('cgp-protection-domain');const domain=domains.find(d=>d.id===chosen)||domains[0];
+  const [config,traffic]=await Promise.all([api('/v5/protection/'+domain.id),api('/v5/protection/'+domain.id+'/traffic')]);
+  const pick=(name,label,options)=>select(name,label,options.map(([value,title])=>[value,title]),config[name]);
+  const providers=[['off','Disabled'],['local','Local arithmetic challenge'],['turnstile','Cloudflare Turnstile'],['hcaptcha','hCaptcha'],['recaptcha','Google reCAPTCHA v2 checkbox']];
+  $('#content').innerHTML='<select id="protection-domain" class="mb-5 rounded-xl border border-slate-200 bg-white/80 p-3 text-sm">'+domains.map(d=>'<option value="'+d.id+'" '+(d.id===domain.id?'selected':'')+'>'+esc(d.name)+'</option>').join('')+'</select><div class="grid gap-6 xl:grid-cols-2"><section class="rounded-2xl border border-white/80 bg-white/75 p-6"><h2 class="mb-5 text-lg font-semibold">'+(current==='captcha'?'Visitor verification':'Request protection')+'</h2><form id="protection-form" class="space-y-4">'+
+    (current==='captcha'?pick('captcha','Provider',providers)+input('site_key','Public site key','text','Not needed for the local challenge.',config.site_key||'')+input('secret','Provider secret','password',config.secret_set?'A secret is saved. Leave blank to retain it.':'Stored on the server, never sent to visitors.')+'<p class="rounded-lg bg-amber-50 p-4 text-xs leading-6 text-amber-900">When enabled, visitors must verify before accessing the website. API clients, webhooks, and crawlers cannot solve browser challenges. Leave this disabled for public APIs. Local arithmetic is a basic obstacle; advanced bots can solve it.</p>':
+    input('requests_per_second','Requests per second per IP','number','Burst allowance: 40 requests.',config.requests_per_second)+input('connections','Concurrent connections per IP','number','',config.connections)+pick('waf','OWASP Core Rule Set WAF',[['off','Off'],['detect','Detect and log'],['enforce','Block matching requests']])+pick('crawlers','Crawler policy',[['allow','Allow crawlers'],['block_ai','Block known AI user agents'],['block_all','Block common crawler user agents']])+'<label class="flex items-center gap-3 text-sm"><input name="sitemap" type="checkbox" '+(config.sitemap?'checked':'')+'> Publish a sitemap</label>'+'<label class="flex items-center gap-3 text-sm"><input name="sitemap_auto" type="checkbox" '+(config.sitemap_auto?'checked':'')+'> Automatically include observed page paths</label><p class="text-xs text-slate-500">Automatic mapping uses up to 1,000 paths seen by your analytics tracker. Enable only if tracked pages are public; private route names would otherwise be published. Query strings are excluded.</p>'+textarea('sitemap_paths','Sitemap paths','One public path per line. Publishing replaces the panel-served /robots.txt and /sitemap.xml.',(config.sitemap_paths||['/']).join('\n'))+'<p class="text-xs leading-6 text-slate-500">Crawler rules match declared user agents and publish robots.txt. Bots can disguise themselves or ignore robots.txt. Start the WAF in detection mode and check your application before enabling blocking.</p>')+
+    '<button class="rounded-xl bg-forest px-5 py-3 text-sm text-white">Save protection</button><p id="protection-result" class="text-xs text-emerald-700" role="status"></p></form></section><section class="rounded-2xl border border-white/80 bg-white/75 p-6"><h2 class="text-lg font-semibold">Recent traffic</h2><div class="my-5 grid grid-cols-3 gap-3">'+[['Requests',traffic.samples||0],['Rejected',traffic.rejected||0],['Server errors',traffic.server_errors||0]].map(([label,value])=>'<div class="rounded-xl bg-emerald-50 p-4"><p class="text-xs text-slate-500">'+label+'</p><p class="mt-2 text-2xl font-semibold">'+value+'</p></div>').join('')+'</div><p class="mb-5 text-xs leading-6 text-slate-500">'+esc(traffic.note)+'</p><div class="space-y-2">'+(traffic.sources||[]).map(r=>'<div class="flex flex-wrap justify-between gap-3 rounded-lg '+(r.unusual?'bg-amber-50':'bg-slate-50')+' p-3 text-xs"><span>'+esc(r.ip)+'</span><span>'+r.requests+' requests · '+r.rejected+' rejected'+(r.unusual?' · Investigate':'')+'</span></div>').join('')+'</div><p class="mt-6 text-xs leading-6 text-slate-500">These controls reduce application abuse. Attacks that saturate the network connection require upstream mitigation.</p></section></div>';
+  // select() is shared with older forms; assign the actual stored selection explicitly.
+  for(const key of ['captcha','waf','crawlers']){const field=$('#protection-form [name="'+key+'"]');if(field)field.value=config[key]}
+  $('#protection-domain').onchange=e=>{sessionStorage.setItem('cgp-protection-domain',e.target.value);protectionPage().catch(e=>toast(e.message))};
+  $('#protection-form').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const form=Object.fromEntries(new FormData(e.target));const next={...config,...form};delete next.secret_set;if(current==='protection'){next.requests_per_second=Number(form.requests_per_second);next.connections=Number(form.connections);next.sitemap=!!form.sitemap;next.sitemap_auto=!!form.sitemap_auto;next.sitemap_paths=(form.sitemap_paths||'').split('\n').map(s=>s.trim()).filter(Boolean)}await api('/v5/protection/'+domain.id,'POST',next);$('#protection-result').textContent='Protection saved. Existing visitor passes have been revoked.'}catch(error){toast(error.message)}finally{button.disabled=false}};
+}
+function startTour(){
+  document.querySelector('#cgp-tour')?.remove();
+  const steps=[['home','Your overview','Start here to see your applications, domains, and available tools.'],['apps','What is an application?','An application is an isolated workspace with files, a language runtime, and a startup command. A website, API, Telegram bot, or background worker each runs as an application. Domains connect visitors to a web application.'],['domains','Connect a domain','Add an assigned domain and choose the web application it should serve. Point your DNS records at this server or configure your CDN.'],['files','Manage your files','Browse folders, upload your website, and open text files in a separate editor tab. Deleted files move to Trash.'],['ide','Your development workspace','Open code-server to edit your project, use Git, install editor extensions, and run interactive commands.'],['schedules','Automate tasks','Create scheduled commands. The timing helper previews upcoming runs; Run command now executes your command immediately.'],['backup-center','Protect your work','Create full backups and keep an off-site copy. Review the archive and destination before restoring.'],['monitoring','Keep an eye on your site','Check availability and connect Telegram alerts. Analytics needs the tracker installed on your website.']];
+  const guidance={databases:'Create a MySQL or PostgreSQL database, copy its credentials into your application, and restrict external access to the IPs or networks that need it.',dns:'Manage DNS records when this server is authoritative. If Cloudflare hosts your DNS, apply records there or export the zone.',services:'Enable SFTP or encrypted FTPS for an application, set allowed source networks, and rotate its transfer password.',mail:'Create domain mailboxes and manage passwords and quotas. Your administrator must configure the mail hostname, trusted certificate and public DNS first.',runtimes:'Choose a runtime track or an available official image tag. Switching briefly restarts the application; test code and dependencies before discarding the previous runtime.',terminal:'Run application commands with live output. Tab completes installed commands, arrow keys recall history, and clear resets the display. Use the IDE for interactive programs.','program-logs':'Select an application to watch its stdout and stderr. Configure your framework to write errors there so hidden failures appear here.',analytics:'Install the generated tracker to see page views, estimated unique IPs and click hotspots. Privacy settings can reduce what is collected.',certificates:'Issue and renew HTTPS certificates, choose HTTP or DNS verification, and export records for your CDN provider.',integrations:'Connect backup storage, Telegram alerts, DNS providers or SOCKS5 proxies. Secrets stay private and can be replaced later.',egress:'Route an application through a SOCKS5 gateway. Applying the change restarts the application; administrators can lock its proxy policy.',jobs:'Check queued and running operations here. A queued backup, certificate or IDE installation is not finished until its job succeeds.',protection:'Start the WAF in detection mode, inspect traffic and then enable blocking. Set per-IP request limits and optional crawler or sitemap policies.',captcha:'Choose local arithmetic verification, Cloudflare Turnstile, hCaptcha or reCAPTCHA. Site-wide verification can affect API clients and webhooks.',security:'Review the available isolation, access and traffic protections, and understand their operating limits.',users:'Create accounts, assign permitted domains and set RAM, CPU and workspace disk budgets. Disabling an account revokes its access.',blocks:'Block an individual IP or CIDR range. Read the displayed first and last address to avoid blocking your own management network.','admin-api':'Create scoped expiring administrator tokens and explore endpoint examples. Store each token privately; it is shown only once.',updates:'Control automatic stable-release updates, check for a release or apply one manually. Background jobs must finish before an update starts.',audit:'Review account and provisioning changes to investigate unexpected activity.',docs:'Read the bundled user guides, mail setup instructions and administrator API reference.'};
+  for(const link of document.querySelectorAll('[data-nav]')){const key=link.dataset.nav;if(!steps.some(s=>s[0]===key)&&pages[key])steps.push([key,pages[key][0],guidance[key]||pages[key][1]]);}
+  steps.push(['settings','Your account','Open the account menu to change your password, configure authenticator MFA, save recovery codes, or sign out.']);
+  let step=0,highlight=null;const card=document.createElement('section');card.id='cgp-tour';card.setAttribute('role','dialog');card.setAttribute('aria-label','Workspace guide');card.className='fixed bottom-5 left-5 right-5 z-50 rounded-2xl border border-white/80 bg-white/95 p-6 shadow-2xl backdrop-blur-xl motion-safe:animate-enter md:bottom-auto md:left-72 md:right-auto md:top-24 md:w-96';document.body.append(card);
+  const end=()=>{highlight?.classList.remove('ring-2','ring-emerald-400');localStorage.setItem('cgp-tour-v5-'+me.id,'done');card.remove();document.removeEventListener('keydown',keys)};
+  const draw=()=>{highlight?.classList.remove('ring-2','ring-emerald-400');const [page,title,description]=steps[step];highlight=page==='settings'?document.querySelector('#account-menu'):document.querySelector('[data-nav="'+page+'"]');highlight?.classList.add('ring-2','ring-emerald-400');highlight?.scrollIntoView({block:'nearest'});card.innerHTML='<p class="text-xs font-medium text-emerald-700">WORKSPACE GUIDE · '+(step+1)+' / '+steps.length+'</p><h2 class="mt-3 text-lg font-semibold">'+esc(title)+'</h2><p class="mt-3 text-sm leading-6 text-slate-600">'+esc(description)+'</p><div class="mt-5 flex items-center gap-3"><button data-tour="skip" class="mr-auto text-xs text-slate-500">Close guide</button><button data-tour="back" class="rounded-lg border border-slate-200 px-3 py-2 text-xs" '+(step?'':'disabled')+'>Back</button><button data-tour="next" class="rounded-lg bg-forest px-4 py-2 text-xs text-white">'+(step===steps.length-1?'Finish':'Next')+'</button></div>';card.querySelector('[data-tour="skip"]').onclick=end;card.querySelector('[data-tour="back"]').onclick=()=>{step--;draw()};card.querySelector('[data-tour="next"]').onclick=()=>{if(++step===steps.length)end();else draw()};card.querySelector('[data-tour="next"]').focus()};
+  const keys=e=>{if(e.key==='Escape'){end();return}if(e.key==='Tab'){const buttons=[...card.querySelectorAll('button:not(:disabled)')];if(e.shiftKey&&document.activeElement===buttons[0]){e.preventDefault();buttons.at(-1).focus()}else if(!e.shiftKey&&document.activeElement===buttons.at(-1)){e.preventDefault();buttons[0].focus()}}};document.addEventListener('keydown',keys);draw();
+}
+document.addEventListener('click',e=>{if(e.target.closest('[data-help-tour]'))startTour();if(e.target.closest('[data-help-app]'))modal('What is an application?','<p class="text-sm leading-7 text-slate-600">An application is your project: its files, language runtime, environment variables, and startup command. It runs in an isolated container without host root access. Use a web application for a website or API, or a worker for a Telegram bot and background processing. A domain directs visitors to a web application. Databases are managed separately and connected using credentials in your application configuration.</p>','',null)});
 const tool = (page, title, subtitle, icon) =>
   `<a class="tool group flex items-center gap-3 rounded-lg p-3 text-left transition motion-reduce:transition-none hover:bg-[#f3f7f0] [&_strong]:block [&_strong]:text-[11px] [&_strong]:font-medium [&_small]:mt-1 [&_small]:block [&_small]:text-[10px] [&_small]:text-slate-400" href="#${page}"><span class="tool-icon flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/70 bg-white text-emerald-700/70 transition group-hover:border-emerald-200 group-hover:bg-white group-hover:text-emerald-700">${glyph(pages[page][2], "size-5")}</span><span><strong>${title}</strong><small>${subtitle}</small></span></a>`;
 function toolGroup(title, items) {
   return `<section class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs"><div class="card-head flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_small]:text-[9px] [&_small]:font-medium [&_small]:tracking-wider [&_small]:text-slate-400"><h3>${title}</h3><small>${items.length} TOOLS</small></div><div class="tools-grid grid grid-cols-1 gap-1 p-3 sm:grid-cols-3">${items.map((i) => tool(...i)).join("")}</div></section>`;
 }
 async function dashboard() {
+  const budget=await api("/v5/users/"+me.id+"/budget");
   const d = await api("/overview");
   if (current !== "home") return;
   const c = d.counts;
@@ -396,6 +464,7 @@ async function dashboard() {
         .join("") ||
       '<p class="empty flex flex-col items-center px-5 py-16 text-center [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-medium [&_p]:mb-6 [&_p]:text-sm [&_p]:text-slate-400">No activity yet.</p>'
     }</div></section></aside></div>`;
+  $("#content").insertAdjacentHTML("afterbegin",budgetSummary(budget));
   $("#tool-search").oninput = (e) =>
     document
       .querySelectorAll(".tool")
@@ -448,7 +517,7 @@ async function resourcePage(kind) {
     schedules:
       "Hourly, daily, and weekly jobs run inside the selected application container. The application must be running; each command is limited to 25 seconds.",
     blocks:
-      "These rules block traffic from an exact IP address. Check carefully before blocking an address you use for administration.",
+      "These rules block individual IPs or CIDR prefixes. Check the selected range carefully before blocking a network you use for administration.",
   };
   let html = notices[kind]
     ? `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">${notices[kind]}</div>`
@@ -478,6 +547,7 @@ async function resourcePage(kind) {
           esc(ownerName(r.owner)),
         ];
         actions = [
+          ["limits", "Resources"],
           ["inspect", "Status"],
           ["start", "Start"],
           ["stop", "Stop"],
@@ -515,7 +585,7 @@ async function resourcePage(kind) {
           esc(d.schedule) + " · " + esc(d.timezone || "UTC"),
           esc(d.app_id?.slice(0, 12)),
         ];
-        actions = [["status", "Run history"]];
+        actions = [["status", "Run history"], ["test-cron", "Run now"]];
       }
       if (kind === "backups") {
         cells = [
@@ -576,7 +646,22 @@ function modal(title, fields, submit, handler) {
       b.disabled = false;
     }
   };
-  $("#dialog").showModal();
+  const schedule=$('[name="schedule"]',$('#dialog-fields'));
+    if(schedule){
+      const helper=document.createElement('div');helper.className='mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 text-xs';
+      helper.innerHTML='<label class="block">Quick schedule<select id="cron-preset" class="my-2 w-full rounded-lg border border-slate-200 bg-white p-2"><option value="">Custom expression</option><option value="*/5 * * * *">Every 5 minutes</option><option value="0 * * * *">Every hour</option><option value="0 0 * * *">Every day at midnight</option><option value="0 9 * * 1">Every Monday at 09:00</option><option value="0 0 1 * *">First day of each month</option></select></label><p class="text-slate-500">Fields: minute · hour · day of month · month · weekday. Times use the selected timezone.</p><button type="button" id="cron-preview" class="mt-3 rounded-lg bg-forest px-3 py-2 text-white">Show next 5 runs</button><ol id="cron-dates" class="mt-3 space-y-1"></ol><button type="button" id="cron-test" class="mt-3 rounded-lg border border-slate-300 px-3 py-2">Run command now</button><p class="mt-2 text-slate-500">Runs immediately and can change files or data, just like a scheduled run. Limited to 25 seconds.</p><pre id="cron-output" class="mt-3 max-h-60 overflow-auto whitespace-pre-wrap"></pre>';
+      schedule.closest('label').after(helper);
+      $('#cron-preset').onchange=e=>{if(e.target.value)schedule.value=e.target.value};
+      $('#cron-preview').onclick=async()=>{try{const tz=$('[name="timezone"]').value;const result=await api('/v2/cron-preview','POST',{schedule:schedule.value,timezone:tz});$('#cron-dates').textContent=result.next.map(t=>new Date(t*1000).toLocaleString(undefined,{timeZone:tz})+' '+tz).join(' · ')}catch(e){$('#cron-dates').textContent=e.message}};
+      $('#cron-test').onclick=async e=>{const button=e.currentTarget;button.disabled=true;try{const app=$('[name="app_id"]').value,command=$('[name="command"]').value;if(!command.trim())throw new Error('Enter a command first.');const result=await api('/resource/'+app+'/terminal','POST',{command});$('#cron-output').textContent=result.output||'(No output)'}catch(e){$('#cron-output').textContent=e.message}finally{button.disabled=false}};
+    }
+    document.querySelectorAll('#dialog-fields [name="allowed_ips"], #dialog-fields [data-ip-range]').forEach(field=>{
+      const hint=document.createElement('p');hint.className='my-2 text-xs leading-6 text-slate-500';hint.setAttribute('aria-live','polite');field.after(hint);field.placeholder='10.10.10.0/24, 2001:db8::1';let timer;
+      field.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(async()=>{const value=field.value;try{const rows=await api('/v5/network-range','POST',{value});if(field.value===value)hint.textContent=rows.map(r=>r.error?r.input+': '+r.error:'From '+r.first+' till '+r.last).join(' · ')}catch(e){hint.textContent=e.message}},250)});
+      hint.textContent='Enter individual IPs or CIDR prefixes.'+(current==='databases'?' MariaDB supports IPv4 prefixes and individual IPv6 addresses; PostgreSQL supports both.':'');
+    });
+    if($('#create-budget')){const owner=$('#dialog-fields [name="owner"]');const update=async()=>{const id=owner?.value||me.id;try{const budget=await api('/v5/users/'+id+'/budget');if($('#create-budget'))$('#create-budget').innerHTML=budgetSummary(budget)}catch(e){if($('#create-budget'))$('#create-budget').textContent=e.message}};owner?.addEventListener('change',update);update();}
+    $("#dialog").showModal();
 }
 $("#close-dialog").onclick = $("#cancel-dialog").onclick = () => {
   if (!$("#dialog-submit").disabled) $("#dialog").close();
@@ -623,6 +708,7 @@ async function create(kind = current) {
             ["rust", "Rust"],
             ["static", "Static website"],
           ]) +
+          input("version", "Runtime version (optional)", "text", "Leave blank for the starter version, or use a supported track / official tag such as tag:3.14-slim-bookworm for Python. PHP custom tags must use FPM. Availability depends on the official image registry.").replace(" required", "") +
           select("mode", "Workload", [
             ["web", "Website / API / webhook"],
             ["worker", "Background worker / Telegram polling bot"],
@@ -638,6 +724,7 @@ async function create(kind = current) {
             'Example: {"BOT_TOKEN":"your-token"}. Values are sent to the container and omitted from panel resource responses.',
             "{}",
           );
+      if(kind==='apps') fields+='<div id="create-budget" class="mt-4"></div>'+input('memory_mb','RAM (MiB)','number','','512')+input('cpu_millis','CPU (millicores)','number','1000 = one CPU core.','1000')+input('disk_mb','Workspace disk (MiB)','number','Kernel-enforced volume capacity; filesystem metadata uses some space.','1024');
       if (kind === "domains")
         fields +=
           input(
@@ -660,7 +747,7 @@ async function create(kind = current) {
           textarea(
             "allowed_ips",
             "External IP allowlist",
-            "One exact IPv4 or IPv6 address per line. Blank means local only.",
+            "One IP address or CIDR prefix per line. Blank means local only.",
           );
       if (kind === "dns")
         fields +=
@@ -713,7 +800,7 @@ async function create(kind = current) {
         fields +=
           input("name", "Snapshot label") +
           select("app_id", "Application", apps());
-      if (kind === "blocks") fields += input("name", "IP address");
+      if (kind === "blocks") fields += input("name", "IP address or CIDR prefix").replace("<input ","<input data-ip-range ");
     }
     modal(
       kind === "users"
@@ -729,6 +816,7 @@ async function create(kind = current) {
             .filter(Boolean);
         if (v.quota) v.quota = Number(v.quota);
         if (v.ttl) v.ttl = Number(v.ttl);
+        for(const key of ["memory_mb","cpu_millis","disk_mb"])if(v[key]!==undefined)v[key]=Number(v[key]);
         if (v.env) {
           try {
             v.env = JSON.parse(v.env);
@@ -783,6 +871,16 @@ document.addEventListener("click", async (e) => {
   if (b.dataset.action) {
     const action = b.dataset.action,
       id = b.dataset.id;
+    if(action==='limits'){const item=resources.apps.find(a=>a.id===id);const budget=await api('/v5/users/'+item.owner+'/budget');const entry=budget.applications.find(a=>a.id===id);modal('Application resources · '+item.name,
+      budgetSummary(budget)+input('memory_mb','RAM (MiB)','number','',entry.limits.memory_mb)+input('cpu_millis','CPU (millicores)','number','1000 = one CPU core.',entry.limits.cpu_millis)+input('disk_mb','Workspace disk (MiB)','number','Volumes can grow in place; shrinking requires migration to a new application.',entry.limits.disk_mb)+'<p class="text-xs leading-6 text-slate-500">Applying limits briefly stops this application and its IDE. First-time disk enforcement migrates the workspace and retains a recovery copy. '+(entry.disk_enforced?'Disk enforcement is active.':'This existing workspace does not yet have an enforced disk limit.')+'</p>','Apply limits',async v=>{await api('/v5/apps/'+id+'/limits','POST',Object.fromEntries(Object.entries(v).map(([k,v])=>[k,Number(v)])));$('#dialog').close();await render();toast('Application limits applied.')});return;}
+    if(action==='logs'){sessionStorage.setItem('cg-app',id);location.hash='program-logs';return;}
+    if (action === "test-cron") {
+      const task=resources.schedules.find(r=>r.id===id);
+      modal('Run scheduled command now',`<p class="mb-4 text-sm">This runs immediately in the application and can change files or data. Execution is limited to 25 seconds.</p><pre class="mb-4 whitespace-pre-wrap rounded-xl bg-mint/20 p-4 text-xs">${esc(task.data.command)}</pre><pre id="cron-run-result" class="max-h-80 overflow-auto whitespace-pre-wrap text-xs"></pre>`,'Run command',async()=>{
+        const result=await api('/resource/'+task.data.app_id+'/terminal','POST',{command:task.data.command});
+        $('#cron-run-result').textContent=result.output||'Command completed without output.';
+      });return;
+    }
     if (action === "open-terminal") {
       sessionStorage.setItem("cg-app", id);
       location.hash = "terminal";
@@ -799,7 +897,7 @@ document.addEventListener("click", async (e) => {
         textarea(
           "allowed_ips",
           "Allowed external IPs",
-          "One exact IP per line. Remote connections require TLS.",
+          "One IP or CIDR prefix per line. Remote connections require TLS.",
           (r.data.allowed_ips || []).join("\n"),
         ),
         "Save rules",
@@ -877,33 +975,59 @@ async function workspace(mode) {
     return;
   }
   $("#content").innerHTML =
-    `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">${mode === "terminal" ? "Commands run as UID 1000 inside your rootless application container. Use pip --user, npm, Maven/Gradle, or Cargo in /workspace. Host root access and system package installation are unavailable. Each command has a 25-second limit; this is a command console, not an interactive TTY." : "Files are read and written through the application container. Relative paths stay inside the container; edits are limited to 256 KiB per file. The application must be running."}</div><div class="toolbar mb-5 flex flex-wrap items-center gap-3 [&_input]:min-w-0 [&_input]:flex-1 [&_input]:rounded-lg [&_input]:border [&_input]:border-slate-200 [&_input]:bg-white [&_input]:px-4 [&_input]:py-2.5 [&_input]:text-xs [&_select]:rounded-lg [&_select]:border [&_select]:border-slate-200 [&_select]:bg-white [&_select]:px-4 [&_select]:py-2.5 [&_select]:text-xs"><select id="app-picker" aria-label="Application">${apps.map((a) => `<option value="${a.id}">${esc(a.name)} · ${esc(a.data.runtime)}</option>`).join("")}</select>${mode === "files" ? '<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="list-files">List files</button><input id="file-path" placeholder="Relative path, e.g. main.py" aria-label="Relative file path"><button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="read-file">Open</button><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" id="write-file">Save</button>' : ""}</div>${mode === "terminal" ? '<div class="terminal mb-5 overflow-hidden rounded-xl border border-slate-700 bg-[#122820] text-emerald-100/80 [&_pre]:min-h-80 [&_pre]:max-h-[520px] [&_pre]:overflow-auto [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:p-6 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-7"><div class="terminal-bar flex justify-between gap-3 border-b border-white/10 px-5 py-3.5 text-[10px] text-emerald-100/40"><span>CGPanel command console</span><span>UNPRIVILEGED · /workspace</span></div><pre id="terminal-output">Choose an application and enter a command.\nTry: id, ls -la, python --version\n</pre><form class="command-line flex items-center gap-3 border-t border-white/10 p-4 text-mint [&_input]:min-w-0 [&_input]:flex-1 [&_input]:bg-transparent [&_input]:font-mono [&_input]:text-xs [&_input]:text-emerald-50 [&_input]:outline-none" id="command-form"><span>❯</span><input id="command" autocomplete="off" spellcheck="false" placeholder="Enter command…" aria-label="Command"><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50">Run ↵</button></form></div>' : '<div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs"><textarea id="file-editor" class="editor min-h-96 w-full border-0 bg-[#122820] p-6 font-mono text-xs leading-7 text-emerald-100/85 outline-none" spellcheck="false" aria-label="File editor" placeholder="Open a file or enter a relative path and save a new file."></textarea></div><pre id="file-list" class="secret-result overflow-auto whitespace-pre-wrap break-all rounded-xl border border-slate-200 bg-slate-50 p-5 font-mono text-xs leading-7" hidden></pre>'}`;
+    `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">${mode === "terminal" ? "Commands run as UID 1000 inside your rootless application container. Use pip --user, npm, Maven/Gradle, or Cargo in /workspace. Host root access and system package installation are unavailable. Each command has a 25-second limit; output streams live. Use Tab to complete installed commands, ↑/↓ for history, and clear or Ctrl+L to clear the display. Interactive programs can run in the Workspace IDE terminal." : "Files are read and written through the application container. Relative paths stay inside the container; edits are limited to 256 KiB per file. The application must be running."}</div><div class="toolbar mb-5 flex flex-wrap items-center gap-3 [&_input]:min-w-0 [&_input]:flex-1 [&_input]:rounded-lg [&_input]:border [&_input]:border-slate-200 [&_input]:bg-white [&_input]:px-4 [&_input]:py-2.5 [&_input]:text-xs [&_select]:rounded-lg [&_select]:border [&_select]:border-slate-200 [&_select]:bg-white [&_select]:px-4 [&_select]:py-2.5 [&_select]:text-xs"><select id="app-picker" aria-label="Application">${apps.map((a) => `<option value="${a.id}">${esc(a.name)} · ${esc(a.data.runtime)}</option>`).join("")}</select>${mode === "files" ? '<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="list-files">List files</button><input id="file-path" placeholder="Relative path, e.g. main.py" aria-label="Relative file path"><button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="read-file">Open</button><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" id="write-file">Save</button>' : ""}</div>${mode === "terminal" ? '<div class="terminal mb-5 overflow-hidden rounded-xl border border-slate-700 bg-[#122820] text-emerald-100/80 [&_pre]:min-h-80 [&_pre]:max-h-[520px] [&_pre]:overflow-auto [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:p-6 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-7"><div class="terminal-bar flex justify-between gap-3 border-b border-white/10 px-5 py-3.5 text-[10px] text-emerald-100/40"><span>CGPanel command console</span><span>UNPRIVILEGED · /workspace</span></div><pre id="terminal-output">Choose an application and enter a command.\nTry: id, ls -la, python --version\n</pre><form class="command-line flex items-center gap-3 border-t border-white/10 p-4 text-mint [&_input]:min-w-0 [&_input]:flex-1 [&_input]:bg-transparent [&_input]:font-mono [&_input]:text-xs [&_input]:text-emerald-50 [&_input]:outline-none" id="command-form"><span>❯</span><input id="command" autocomplete="off" spellcheck="false" placeholder="Enter command…" aria-label="Command"><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50">Run ↵</button></form></div>' : '<div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs"><textarea id="file-editor" class="editor min-h-96 w-full border-0 bg-[#122820] p-6 font-mono text-xs leading-7 text-emerald-100/85 outline-none" spellcheck="false" aria-label="File editor" placeholder="Open a file or enter a relative path and save a new file."></textarea></div><pre id="file-list" class="secret-result overflow-auto whitespace-pre-wrap break-all rounded-xl border border-slate-200 bg-slate-50 p-5 font-mono text-xs leading-7" hidden></pre>'}`;
   const picker = $("#app-picker");
   const saved = sessionStorage.getItem("cg-app");
   if (apps.some((a) => a.id === saved)) picker.value = saved;
   picker.onchange = () => sessionStorage.setItem("cg-app", picker.value);
+  if(mode==='terminal'){
+    const field=$('#command');let commands=['cd','clear','echo','exit','export','pwd'],history=[],historyAt=0;
+    const hint=document.createElement('span');hint.className='pointer-events-none absolute inset-0 overflow-hidden whitespace-pre font-mono text-xs text-slate-500';hint.setAttribute('aria-hidden','true');
+    const wrap=document.createElement('div');wrap.className='relative min-w-0 flex-1';field.replaceWith(wrap);wrap.append(hint,field);field.classList.add('relative','w-full');
+    const suggestion=()=>{const value=field.value;return value&&!/\s/.test(value)?commands.find(x=>x.startsWith(value)&&x!==value)||'':''};
+    field.addEventListener('input',()=>{hint.textContent=suggestion()});
+    field.addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();const next=suggestion();if(next)field.value=next+' ';hint.textContent=''}
+      if(e.ctrlKey&&e.key.toLowerCase()==='l'){e.preventDefault();$('#terminal-output').textContent=''}
+      if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();historyAt=Math.max(0,Math.min(history.length,historyAt+(e.key==='ArrowUp'?-1:1)));field.value=history[historyAt]||'';hint.textContent=''}
+      if(e.key==='Enter'&&field.value.trim()){history.push(field.value);historyAt=history.length;hint.textContent=''}
+    });
+    const complete=async()=>{const chosen=picker.value;try{const result=await api(`/resource/${chosen}/terminal`,'POST',{command:'for d in /usr/local/bin /usr/bin /bin /workspace/.local/bin /workspace/.cargo/bin; do for f in "$d"/*; do [ -f "$f" ] && [ -x "$f" ] && printf "%s\\n" "${f##*/}"; done; done | head -2000'});if(picker.value===chosen)commands=[...new Set(['cd','clear','echo','export','pwd',...result.output.split(/\r?\n/).filter(x=>/^[a-zA-Z0-9_.+-]+$/.test(x))])].sort()}catch{}};
+    picker.addEventListener('change',()=>{commands=['cd','clear','echo','pwd'];complete()});complete();
+  }
   if (mode === "terminal")
     $("#command-form").onsubmit = async (e) => {
       e.preventDefault();
       const command = $("#command").value;
       if (!command.trim() || pending) return;
+      if (command.trim() === "clear") { $("#terminal-output").textContent = ""; $("#command").value = ""; return; }
       pending = true;
       $("button", e.target).disabled = true;
       const out = $("#terminal-output");
       out.textContent += "\n❯ " + command + "\n";
       $("#command").value = "";
       try {
-        const r = await api(`/resource/${picker.value}/terminal`, "POST", {
-          command,
+        const response=await fetch(`/api/v5/apps/${picker.value}/console`,{
+          method:'POST',credentials:'same-origin',signal:routeController.signal,
+          headers:{'Content-Type':'application/json','x-csrf-token':csrf},body:JSON.stringify({command})
         });
-        out.textContent += r.output;
+        if(!response.ok)throw new Error((await response.json()).error||'Command failed');
+        const reader=response.body.getReader(),decoder=new TextDecoder(),outputDecoder={stdout:new TextDecoder(),stderr:new TextDecoder()};let buffer='';
+        while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});
+          let at;while((at=buffer.indexOf('\n'))>=0){const event=JSON.parse(buffer.slice(0,at));buffer=buffer.slice(at+1);
+            if(event.type==='stdout'||event.type==='stderr')out.textContent+=outputDecoder[event.type].decode(Uint8Array.from(atob(event.data),c=>c.charCodeAt(0)),{stream:true});
+            else if(event.type==='exit')out.textContent+='\n[exit '+event.code+']\n';
+            else if(event.type==='error')out.textContent+='\n'+event.message+'\n';
+            out.scrollTop=out.scrollHeight;
+          }
+        }
+        out.textContent+=outputDecoder.stdout.decode()+outputDecoder.stderr.decode();
       } catch (e) {
         out.textContent += e.message;
       } finally {
         pending = false;
         $("button", e.target).disabled = false;
         out.scrollTop = out.scrollHeight;
-        $("#command").focus();
+        $("#command")?.focus();
       }
     };
   else {
@@ -937,7 +1061,7 @@ async function workspace(mode) {
 async function usersPage() {
   userList = await api("/users");
   $("#content").innerHTML =
-    `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">Tenants cannot become administrators, obtain host root, or access another tenant’s resources. Account suspension revokes panel sessions; running workloads remain online.</div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs table-wrap overflow-x-auto"><table class="data-table w-full border-collapse whitespace-nowrap text-left [&_th]:bg-slate-50/70 [&_th]:px-5 [&_th]:py-3.5 [&_th]:text-[9px] [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-slate-400 [&_td]:border-t [&_td]:border-slate-100 [&_td]:px-5 [&_td]:py-5 [&_td]:text-xs [&_td_small]:mt-1 [&_td_small]:block [&_td_small]:max-w-48 [&_td_small]:truncate [&_td_small]:text-[10px] [&_td_small]:text-slate-400 [&_tbody_tr]:transition [&_tbody_tr:hover]:bg-slate-50/50"><thead><tr><th>Account</th><th>Role</th><th>State</th><th>Quota / type</th><th>Panel access</th><th>Actions</th></tr></thead><tbody>${userList.map((u) => `<tr><td><b>${esc(u.username)}</b><small>${u.id.slice(0, 12)}</small></td><td>${esc(u.role)}</td><td><span class="pill inline-flex items-center rounded-md border border-emerald-100 bg-emerald-50/70 px-2 py-1 text-[10px] font-medium text-emerald-700">${u.enabled ? "Enabled" : "Suspended"}</span></td><td>${u.quota}</td><td>${esc(u.allowed_ips.join(", ") || "Any source IP")}</td><td>${u.role === "admin" ? "—" : `<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" data-user="${u.id}">Manage access</button>`}</td></tr>`).join("")}</tbody></table></div>`;
+    `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">Tenants cannot become administrators, obtain host root, or access another tenant’s resources. Account suspension revokes panel sessions; running workloads remain online.</div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs table-wrap overflow-x-auto"><table class="data-table w-full border-collapse whitespace-nowrap text-left [&_th]:bg-slate-50/70 [&_th]:px-5 [&_th]:py-3.5 [&_th]:text-[9px] [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-slate-400 [&_td]:border-t [&_td]:border-slate-100 [&_td]:px-5 [&_td]:py-5 [&_td]:text-xs [&_td_small]:mt-1 [&_td_small]:block [&_td_small]:max-w-48 [&_td_small]:truncate [&_td_small]:text-[10px] [&_td_small]:text-slate-400 [&_tbody_tr]:transition [&_tbody_tr:hover]:bg-slate-50/50"><thead><tr><th>Account</th><th>Role</th><th>State</th><th>Quota / type</th><th>Panel access</th><th>Actions</th></tr></thead><tbody>${userList.map((u) => `<tr><td><b>${esc(u.username)}</b><small>${u.id.slice(0, 12)}</small></td><td>${esc(u.role)}</td><td><span class="pill inline-flex items-center rounded-md border border-emerald-100 bg-emerald-50/70 px-2 py-1 text-[10px] font-medium text-emerald-700">${u.enabled ? "Enabled" : "Suspended"}</span></td><td>${u.quota}</td><td>${esc(u.allowed_ips.join(", ") || "Any source IP")}</td><td>${u.role === "admin" ? "—" : `<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" data-user="${u.id}">Manage access</button> <button data-budget="${u.id}" class="rounded-lg border border-slate-200 px-3 py-2.5 text-xs">Resource budget</button>`}</td></tr>`).join("")}</tbody></table></div>`;
 }
 function editUser(id) {
   const u = userList.find((x) => x.id === id);
@@ -982,19 +1106,19 @@ function security() {
     ],
     [
       "Application limits",
-      "Each application has a 512 MB memory cap, 1 CPU limit, and 128-process limit. A read-only root filesystem keeps package changes in its workspace.",
+      "Admin account budgets govern application RAM, CPU and workspace disk allocations. Enforced workspace volumes prevent writes beyond their capacity; legacy workspaces can be migrated in Applications.",
     ],
     [
       "Web traffic controls",
-      "Nginx limits requests and concurrent connections. The firewall exposes hosting services and explicitly permitted database clients.",
+      "Configure request limits, connection limits and OWASP CRS detection or blocking in Website protection. Review rejected requests before tightening policies.",
     ],
     [
       "Account protection",
-      "Argon2id password hashes, expiring HttpOnly sessions, CSRF checks, login throttling, and optional per-account CIDR filters.",
+      "Authenticator MFA and one-use recovery codes, Argon2id passwords, expiring HttpOnly sessions, CSRF checks, login throttling and IP/CIDR filters.",
     ],
     [
       "Database boundaries",
-      "Separate database credentials and permissions. Remote database traffic requires TLS and exact source-IP rules.",
+      "Separate database credentials and permissions. Remote database traffic requires TLS and IP/CIDR rules. MySQL IPv6 networks require individual addresses.",
     ],
     [
       "Administrative audit",
@@ -1002,7 +1126,7 @@ function security() {
     ],
   ];
   $("#content").innerHTML =
-    `<div class="info-box mb-5 rounded-xl border px-5 py-4 text-xs leading-6 warning-box border-amber-200/60 bg-amber-50/60 text-amber-900/65">This community alpha has not undergone an independent security audit. Host controls cannot absorb a flood that saturates the server’s network link; arrange upstream DDoS protection with your provider. Disk quotas, WAF rules, MFA, and mail hosting are not implemented in this release.</div><div class="grid-two grid items-start gap-5 lg:grid-cols-2"><section class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs"><div class="card-head flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_small]:text-[9px] [&_small]:font-medium [&_small]:tracking-wider [&_small]:text-slate-400"><h3>Implemented protections</h3><small>CONFIGURATION SUMMARY</small></div>${features.map(([name, detail]) => `<div class="feature-item flex items-start gap-3 border-b border-slate-100 px-5 py-4 last:border-b-0 [&_strong]:text-xs [&_strong]:font-medium [&_p]:mt-1.5 [&_p]:text-[11px] [&_p]:leading-6 [&_p]:text-slate-400"><span class="feature-check mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[10px] text-emerald-600">✓</span><div><strong>${name}</strong><p>${detail}</p></div></div>`).join("")}</section><section><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Security boundaries</h3><p>Tenant commands run inside their own containers. A separate Rust broker performs a fixed set of host operations over a local Unix socket.</p><p>The broker is trusted infrastructure. Keep it updated and restrict host SSH access to administrators.</p><a class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" href="#audit">Review activity →</a></div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Access management</h3><p>Apply source IP rules to tenant panel logins and to each database independently.</p><a class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" href="#${me.role === "admin" ? "users" : "settings"}">Manage accounts →</a></div></section></div>`;
+    `<div class="info-box mb-5 rounded-xl border px-5 py-4 text-xs leading-6 warning-box border-amber-200/60 bg-amber-50/60 text-amber-900/65">This community alpha has not undergone an independent security audit. Host controls cannot absorb a flood that saturates the server’s network link; arrange upstream DDoS protection with your provider. Use Website protection for WAF and crawler policies, CAPTCHA for verification, Account settings for MFA, and Mail hosting for protected SMTP/IMAP accounts.</div><div class="grid-two grid items-start gap-5 lg:grid-cols-2"><section class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs"><div class="card-head flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_small]:text-[9px] [&_small]:font-medium [&_small]:tracking-wider [&_small]:text-slate-400"><h3>Implemented protections</h3><small>CONFIGURATION SUMMARY</small></div>${features.map(([name, detail]) => `<div class="feature-item flex items-start gap-3 border-b border-slate-100 px-5 py-4 last:border-b-0 [&_strong]:text-xs [&_strong]:font-medium [&_p]:mt-1.5 [&_p]:text-[11px] [&_p]:leading-6 [&_p]:text-slate-400"><span class="feature-check mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[10px] text-emerald-600">✓</span><div><strong>${name}</strong><p>${detail}</p></div></div>`).join("")}</section><section><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Security boundaries</h3><p>Tenant commands run inside their own containers. A separate Rust broker performs a fixed set of host operations over a local Unix socket.</p><p>The broker is trusted infrastructure. Keep it updated and restrict host SSH access to administrators.</p><a class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" href="#audit">Review activity →</a></div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Access management</h3><p>Apply source IP rules to tenant panel logins and to each database independently.</p><a class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" href="#${me.role === "admin" ? "users" : "settings"}">Manage accounts →</a></div></section></div>`;
 }
 async function auditPage() {
   const d = await api("/overview");
@@ -1010,13 +1134,24 @@ async function auditPage() {
   $("#content").innerHTML =
     `<div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs table-wrap overflow-x-auto"><table class="data-table w-full border-collapse whitespace-nowrap text-left [&_th]:bg-slate-50/70 [&_th]:px-5 [&_th]:py-3.5 [&_th]:text-[9px] [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-slate-400 [&_td]:border-t [&_td]:border-slate-100 [&_td]:px-5 [&_td]:py-5 [&_td]:text-xs [&_td_small]:mt-1 [&_td_small]:block [&_td_small]:max-w-48 [&_td_small]:truncate [&_td_small]:text-[10px] [&_td_small]:text-slate-400 [&_tbody_tr]:transition [&_tbody_tr:hover]:bg-slate-50/50"><thead><tr><th>Action</th><th>Actor</th><th>Target</th><th>Time (UTC)</th></tr></thead><tbody>${d.events.map((e) => `<tr><td>${esc(e.action)}</td><td>${esc(e.actor)}</td><td>${esc(e.target)}</td><td>${esc(e.created)}</td></tr>`).join("")}</tbody></table></div><p>Showing the most recent 20 events available to your account.</p>`;
 }
-function settings() {
+async function settings() {
   $("#content").innerHTML =
-    `<div class="grid-two grid items-start gap-5 lg:grid-cols-2"><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Your account</h3><p><b>${esc(me.username)}</b> · ${esc(me.role)}</p><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" id="change-password">Change password</button></div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Current session</h3><p>Sessions expire after eight hours. Password changes revoke all your sessions and API tokens.</p><button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="logout">Sign out</button></div></div>`;
+    `<div class="grid-two grid items-start gap-5 lg:grid-cols-2"><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Your account</h3><p><b>${esc(me.username)}</b> · ${esc(me.role)}</p><button class="primary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2.5 text-xs font-medium text-white transition motion-reduce:transition-none hover:bg-emerald-900 disabled:cursor-wait disabled:opacity-50" id="change-password">Change password</button><div id="mfa-settings" class="mt-6 border-t border-slate-100 pt-5"></div></div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs aside-card p-5 [&_h3]:mb-4 [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:mb-4 [&_p]:text-xs [&_p]:text-slate-400"><h3>Current session</h3><p>Sessions expire after eight hours. Password changes revoke all your sessions and API tokens.</p><button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" id="logout">Sign out</button></div></div>`;
   $("#logout").onclick = async () => {
     await api("/logout", "POST", {});
     showLogin();
   };
+  const mfaState=await api('/v5/mfa');
+  if(!$('#mfa-settings'))return;
+  $('#mfa-settings').innerHTML=`<h3>Two-factor authentication</h3><p>${mfaState.enabled ? `Enabled · ${mfaState.recovery_codes_remaining} recovery codes left` : 'Add an authenticator app to protect your account.'}</p><button id="manage-mfa" class="rounded-xl bg-forest px-4 py-2.5 text-white">${mfaState.enabled?'Disable MFA':'Set up MFA'}</button>`;
+  $('#manage-mfa').onclick=()=>modal(mfaState.enabled?'Disable MFA':'Set up authenticator',input('password','Current password','password')+(mfaState.enabled?input('code','Authenticator or recovery code'):''),'Continue',async v=>{
+    if(mfaState.enabled){await api('/v5/mfa/disable','POST',v);toast('MFA disabled');return render();}
+    const enrollment=await api('/v5/mfa/enroll','POST',v);
+    setTimeout(()=>modal('Connect your authenticator',`<p class="mb-3 text-sm text-slate-600">Add a time-based account in your authenticator using this secret. Enter its six-digit code below. Setup expires in ten minutes.</p><code class="mb-5 block break-all rounded-xl bg-mint/30 p-4 select-all">${esc(enrollment.secret)}</code>`+input('code','Six-digit code'),'Enable MFA',async value=>{
+      const result=await api('/v5/mfa/confirm','POST',value);
+      setTimeout(()=>modal('Save your recovery codes',`<p class="mb-3 text-sm">Keep these somewhere safe. Each works once in place of an authenticator code. They will not be shown again.</p><pre class="select-all rounded-xl bg-mint/30 p-4 text-xs">${result.recovery_codes.map(esc).join('\n')}</pre>`,'I saved these codes',async()=>render()),0);
+    }),0);
+  });
   $("#change-password").onclick = () =>
     modal(
       "Change password",

@@ -1,8 +1,14 @@
 //! Linux privileged broker. The HTTP process never runs as root.
+mod backup_import;
 mod backups_agent;
+mod console_agent;
 mod cron_agent;
 mod egress_agent;
 mod integrations_agent;
+mod mail_agent;
+mod protection_agent;
+mod resources_agent;
+mod services_agent;
 mod tls_agent;
 mod transfers_agent;
 mod workspace_agent;
@@ -224,15 +230,36 @@ fn image(runtime: &str) -> Result<String> {
     };
     Ok(format!("{registry}/library/{image}"))
 }
+fn coming_soon() -> String {
+    include_str!("../web/comingsoon.html").replace("__STYLE__", include_str!("../web/style.css"))
+}
 fn starter(runtime: &str) -> (&'static str, &'static str, &'static str) {
-    match runtime{
-    "python"|"static"=>("index.html","<!doctype html><title>CGPanel</title><h1>Your CGPanel application is running.</h1>","python -m http.server 8080 --bind 0.0.0.0"),
-    "php"=>("index.php","<?php echo '<h1>Your PHP application is running on CGPanel.</h1>';", "php -S 0.0.0.0:8080 -t /workspace"),
-    "node"=>("server.js","require('http').createServer((q,s)=>s.end('CGPanel Node.js application is running')).listen(8080,'0.0.0.0');", "node server.js"),
-    "java"=>("Main.java","import com.sun.net.httpserver.HttpServer; import java.net.InetSocketAddress; class Main { public static void main(String[] a) throws Exception {var s=HttpServer.create(new InetSocketAddress(8080),0);s.createContext(\"/\",e->{byte[] b=\"CGPanel Java application is running\".getBytes();e.sendResponseHeaders(200,b.length);e.getResponseBody().write(b);e.close();});s.start();}}", "java Main.java"),
-    _=>("main.rs","use std::{net::TcpListener,io::{Read,Write}};fn main(){for s in TcpListener::bind(\"0.0.0.0:8080\").unwrap().incoming(){if let Ok(mut s)=s{let mut b=[0;4096];let _=s.read(&mut b);let _=s.write_all(b\"HTTP/1.1 200 OK\\r\\nContent-Length: 13\\r\\n\\r\\nCGPanel Rust!\");}}}", "rustc main.rs -o /workspace/server && ./server")}
+    match runtime {
+        "python" | "static" => (
+            "index.html",
+            "",
+            "python -m http.server 8080 --bind 0.0.0.0",
+        ),
+        "php" => ("index.php", "", "php -S 0.0.0.0:8080 -t /workspace"),
+        "node" => (
+            "server.js",
+            r#"require('http').createServer((q,s)=>{s.setHeader('Content-Type','text/html; charset=utf-8');s.end(require('fs').readFileSync('/workspace/index.html'))}).listen(8080,'0.0.0.0');"#,
+            "node server.js",
+        ),
+        "java" => (
+            "Main.java",
+            r#"import com.sun.net.httpserver.HttpServer; import java.net.InetSocketAddress; import java.nio.file.*; class Main { public static void main(String[] a) throws Exception {var s=HttpServer.create(new InetSocketAddress(8080),0);s.createContext("/",e->{byte[] b=Files.readAllBytes(Path.of("/workspace/index.html"));e.getResponseHeaders().set("Content-Type","text/html; charset=utf-8");e.sendResponseHeaders(200,b.length);e.getResponseBody().write(b);e.close();});s.start();}}"#,
+            "java Main.java",
+        ),
+        _ => (
+            "main.rs",
+            r#"use std::{net::TcpListener,io::{Read,Write}};fn main(){for s in TcpListener::bind("0.0.0.0:8080").unwrap().incoming(){if let Ok(mut s)=s{let mut request=[0;4096];let _=s.read(&mut request);let b=std::fs::read("/workspace/index.html").unwrap_or_default();let _=write!(s,"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",b.len());let _=s.write_all(&b);}}}"#,
+            "rustc main.rs -o /workspace/server && ./server",
+        ),
+    }
 }
 async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
+    let allocation = resources_agent::check(reg, op, false)?;
     ensure!(identifier(s(&op.data, "name")), "Invalid application name");
     let runtime = s(&op.data, "runtime");
     let image = if s(&op.data, "version").is_empty() {
@@ -245,12 +272,31 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         "Invalid application mode"
     );
     tenant(&op.tenant).await?;
+    if op.action == "create_app" && !s(&op.data, "version").is_empty() {
+        workspace_agent::prepare(&op.tenant, runtime, s(&op.data, "version")).await?;
+    }
     let dir = appdir(&op.tenant, &op.id);
     tokio::fs::create_dir_all(&dir).await?;
+    if !["egress_configure", "runtime_configure", "runtime_activate"].contains(&op.action.as_str())
+    {
+        resources_agent::volume(op, allocation["disk_mb"].as_u64().unwrap()).await?;
+    }
     let (file, content, default) = starter(runtime);
     if !["egress_configure", "runtime_configure", "runtime_activate"].contains(&op.action.as_str())
     {
-        tokio::fs::write(format!("{dir}/{file}"), content).await?;
+        let page = coming_soon();
+        tokio::fs::write(format!("{dir}/index.html"), &page).await?;
+        if file != "index.html" {
+            tokio::fs::write(
+                format!("{dir}/{file}"),
+                if content.is_empty() {
+                    page.as_str()
+                } else {
+                    content
+                },
+            )
+            .await?;
+        }
     }
     run(
         "chown",
@@ -301,9 +347,9 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         "--memory",
-        "512m",
+        &format!("{}m",allocation["memory_mb"]),
         "--cpus",
-        "1",
+        &format!("{:.3}",allocation["cpu_millis"].as_u64().unwrap() as f64/1000.0),
         "--pids-limit",
         "128",
         "--network",
@@ -365,6 +411,9 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
     a.extend(args(&[&image, "sh", "-c", command]));
     pod(&op.tenant, a, None, 300).await?;
     let mut d = op.data.clone();
+    for key in ["memory_mb", "cpu_millis", "disk_mb"] {
+        d[key] = allocation[key].clone();
+    }
     d["port"] = json!(port);
     d["image"] = json!(image);
     reg.items.insert(
@@ -410,7 +459,8 @@ async fn create_domain(reg: &mut Registry, op: &Operation) -> Result<Value> {
     let location = if app.is_empty() {
         let dir = format!("/srv/cgpanel/public/{}", op.id);
         tokio::fs::create_dir_all(&dir).await?;
-        tokio::fs::write(format!("{dir}/index.html"), "<h1>Hosted by CGPanel</h1>").await?;
+        tokio::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).await?;
+        atomic(&format!("{dir}/index.html"), &coming_soon(), 0o644).await?;
         format!("root {dir}; index index.html; location / {{ try_files $uri $uri/ =404; }}")
     } else {
         let item = reference(reg, app, &op.tenant, "apps")?;
@@ -554,8 +604,7 @@ fn exact_ips(v: &Value) -> Result<Vec<String>> {
     a.iter()
         .map(|v| {
             let s = v.as_str().context("Invalid IP")?;
-            ensure!(cgpanel::valid_ip(s), "Use exact IP addresses");
-            Ok(s.into())
+            cgpanel::network::canonical(s)
         })
         .collect()
 }
@@ -586,6 +635,42 @@ async fn pg(sql: &str) -> Result<String> {
     )
     .await
 }
+fn aggregate_ips(values: Vec<String>) -> Result<Vec<String>> {
+    let nets = values
+        .iter()
+        .map(|s| cgpanel::network::network(s))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(ipnet::IpNet::aggregate(&nets)
+        .iter()
+        .map(ToString::to_string)
+        .collect())
+}
+async fn block_access(reg: &Registry) -> Result<()> {
+    let values = aggregate_ips(
+        reg.items
+            .values()
+            .filter(|i| i.kind == "blocks")
+            .map(|i| s(&i.data, "name").to_owned())
+            .collect(),
+    )?;
+    let mut script =
+        String::from("flush set inet cgpanel blocked4\nflush set inet cgpanel blocked6\n");
+    for (set, ipv6) in [("blocked4", false), ("blocked6", true)] {
+        let ips = values
+            .iter()
+            .filter(|ip| ip.contains(':') == ipv6)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !ips.is_empty() {
+            script.push_str(&format!(
+                "add element inet cgpanel {set} {{ {} }}\n",
+                ips.join(", ")
+            ));
+        }
+    }
+    exec("nft", args(&["-f", "-"]), Some(script), 30).await?;
+    Ok(())
+}
 async fn db_access(reg: &Registry) -> Result<()> {
     let mut hba=String::from("# Managed by CGPanel. Local OS admin uses peer authentication.\nlocal all postgres peer\nlocal all all scram-sha-256\n");
     let mut v4 = Vec::new();
@@ -599,10 +684,8 @@ async fn db_access(reg: &Registry) -> Result<()> {
                 v4.push(ip.clone())
             }
             if s(&i.data, "engine") == "postgresql" {
-                hba.push_str(&format!(
-                    "hostssl {name} {name} {ip}/{} scram-sha-256\n",
-                    if ip.contains(':') { 128 } else { 32 }
-                ));
+                let network = cgpanel::network::network(&ip)?;
+                hba.push_str(&format!("hostssl {name} {name} {network} scram-sha-256\n"));
             }
         }
         if s(&i.data, "engine") == "postgresql" {
@@ -614,10 +697,8 @@ async fn db_access(reg: &Registry) -> Result<()> {
     atomic(&pg_hba, &hba, 0o640).await?;
     run("chown", &["postgres:postgres", &pg_hba]).await?;
     pg("SELECT pg_reload_conf();").await?;
-    v4.sort();
-    v4.dedup();
-    v6.sort();
-    v6.dedup();
+    let v4 = aggregate_ips(v4)?;
+    let v6 = aggregate_ips(v6)?;
     let mut nft =
         String::from("flush set inet cgpanel database4\nflush set inet cgpanel database6\n");
     if !v4.is_empty() {
@@ -646,8 +727,12 @@ async fn create_database(reg: &mut Registry, op: &Operation) -> Result<Value> {
     let name = db_name(&op.id);
     let password = random_secret();
     if engine == "mysql" {
+        for ip in &ips {
+            cgpanel::network::mysql_host(ip)?;
+        }
         let mut sql=format!("CREATE DATABASE `{name}` CHARACTER SET utf8mb4;\nCREATE USER '{name}'@'localhost' IDENTIFIED BY '{password}';\nGRANT ALL PRIVILEGES ON `{name}`.* TO '{name}'@'localhost';\n");
         for ip in &ips {
+            let ip = cgpanel::network::mysql_host(ip)?;
             sql.push_str(&format!("CREATE USER '{name}'@'{ip}' IDENTIFIED BY '{password}' REQUIRE SSL;\nGRANT ALL PRIVILEGES ON `{name}`.* TO '{name}'@'{ip}';\n"));
         }
         mysql(&sql).await?;
@@ -669,7 +754,10 @@ async fn create_database(reg: &mut Registry, op: &Operation) -> Result<Value> {
         json!({"database":name,"username":name,"password":password,"port":if engine=="mysql"{3306}else{5432},"local_host":"127.0.0.1","remote_tls_required":true}),
     )
 }
-async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
+async fn execute(reg: &mut Registry, mut op: Operation) -> Result<Value> {
+    if op.action == "create_app" {
+        op.data = cgpanel::application_input(&op.data);
+    }
     ensure!(
         identifier(&op.tenant) && op.tenant.len() == 32,
         "Invalid tenant ID"
@@ -681,7 +769,19 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
         ensure!(!reg.items.contains_key(&op.id), "Resource already exists");
     }
     match op.action.as_str() {
+        "mail_status" | "mail_configure" | "mail_domain" | "mailbox_save" => {
+            mail_agent::execute(reg, &op).await
+        }
+        "backup_import" => backup_import::execute(reg, &op).await,
+        "budget_status" => resources_agent::status(reg, &op),
+        "budget_configure" => resources_agent::set_budget(reg, &op).await,
+        "allocation_configure" => resources_agent::configure(reg, &op).await,
+        "services_status" => services_agent::status(reg, &op).await,
+        "services_configure" => services_agent::configure(reg, &op).await,
+        "protection_configure" => protection_agent::configure(reg, &op).await,
+        "protection_stats" => protection_agent::stats(reg, &op).await,
         "workspace_files" => workspace_agent::files(reg, &op).await,
+        "workspace_git" => workspace_agent::git(reg, &op).await,
         "runtime_catalog" => Ok(workspace_agent::catalog()),
         "runtime_status" => {
             let i = owned(reg, &op, "apps")?;
@@ -698,15 +798,28 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
             Ok(json!({"password":i.data["ide_password"]}))
         }
         "tenant_stop_ide" => {
+            mail_agent::suspend(reg, &op.tenant).await?;
             let ids: Vec<_> = reg
                 .items
                 .iter()
                 .filter(|(_, i)| {
-                    i.tenant == op.tenant && i.kind == "apps" && i.data["ide_enabled"] == true
+                    i.tenant == op.tenant
+                        && i.kind == "apps"
+                        && (i.data["ide_enabled"] == true || i.data["transfer_user"].is_string())
                 })
                 .map(|(id, _)| id.clone())
                 .collect();
             for id in ids {
+                services_agent::disable(
+                    reg,
+                    &Operation {
+                        action: "services_configure".into(),
+                        tenant: op.tenant.clone(),
+                        id: id.clone(),
+                        data: json!({}),
+                    },
+                )
+                .await?;
                 workspace_agent::ide(
                     reg,
                     &Operation {
@@ -808,13 +921,18 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
             let ips = exact_ips(&op.data["allowed_ips"])?;
             let name = db_name(&op.id);
             if s(&item.data, "engine") == "mysql" {
+                for ip in &ips {
+                    cgpanel::network::mysql_host(ip)?;
+                }
                 let old = exact_ips(&item.data["allowed_ips"])?;
                 let pw = s(&item.data, "password");
                 let mut sql = String::new();
                 for ip in old.iter().filter(|ip| !ips.contains(ip)) {
+                    let ip = cgpanel::network::mysql_host(ip)?;
                     sql.push_str(&format!("DROP USER IF EXISTS '{name}'@'{ip}';\n"));
                 }
                 for ip in ips.iter().filter(|ip| !old.contains(ip)) {
+                    let ip = cgpanel::network::mysql_host(ip)?;
                     sql.push_str(&format!("CREATE USER '{name}'@'{ip}' IDENTIFIED BY '{pw}' REQUIRE SSL;\nGRANT ALL PRIVILEGES ON `{name}`.* TO '{name}'@'{ip}';\n"));
                 }
                 if !sql.is_empty() {
@@ -885,6 +1003,8 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
                     "25s",
                     "sh",
                     "-c",
+                    "sh -c \"$1\"; code=$?; printf '\\n[exit %s]\\n' \"$code\"",
+                    "cgpanel-command",
                     command,
                 ]),
                 None,
@@ -1032,19 +1152,10 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
         }
         "create_block" => {
             let ip = s(&op.data, "name");
-            ensure!(cgpanel::valid_ip(ip), "Invalid IP address");
-            let set = if ip.contains(':') {
-                "blocked6"
-            } else {
-                "blocked4"
-            };
-            exec(
-                "nft",
-                args(&["add", "element", "inet", "cgpanel", set, "{", ip, "}"]),
-                None,
-                30,
-            )
-            .await?;
+            ensure!(
+                cgpanel::network::network(ip).is_ok(),
+                "Invalid IP address or prefix"
+            );
             reg.items.insert(
                 op.id.clone(),
                 Item {
@@ -1053,6 +1164,7 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
                     data: op.data.clone(),
                 },
             );
+            block_access(reg).await?;
             Ok(json!({"blocked":true}))
         }
         action if action.starts_with("delete_") => {
@@ -1069,6 +1181,7 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
             let item = owned(reg, &op, kind)?.clone();
             match kind {
                 "apps" => {
+                    services_agent::disable(reg, &op).await?;
                     if item.data["ide_installed"] == true {
                         workspace_agent::ide(
                             reg,
@@ -1091,6 +1204,12 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
                     egress_agent::cleanup(&op.tenant, &op.id).await;
                 }
                 "domains" => {
+                    ensure!(
+                        !reg.items.values().any(|i| i.kind == "mailboxes"
+                            && i.data["domain_id"] == op.id
+                            && i.data["enabled"] == true),
+                        "Disable this domain's mailboxes before deleting it"
+                    );
                     tokio::fs::remove_file(format!("/etc/nginx/conf.d/cgp_{}.conf", op.id)).await?;
                     run("nginx", &["-t"]).await?;
                     run("systemctl", &["reload", "nginx"]).await?;
@@ -1100,6 +1219,7 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
                     if s(&item.data, "engine") == "mysql" {
                         let mut sql=format!("DROP DATABASE IF EXISTS `{name}`; DROP USER IF EXISTS '{name}'@'localhost';");
                         for ip in exact_ips(&item.data["allowed_ips"])? {
+                            let ip = cgpanel::network::mysql_host(&ip)?;
                             sql.push_str(&format!("DROP USER IF EXISTS '{name}'@'{ip}';"));
                         }
                         mysql(&sql).await?;
@@ -1110,26 +1230,31 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
                 "backups" => {
                     tokio::fs::remove_file(format!("{ROOT}/backups/{}.tar.gz", op.id)).await?;
                 }
-                "blocks" => {
-                    let ip = s(&item.data, "name");
-                    let set = if ip.contains(':') {
-                        "blocked6"
-                    } else {
-                        "blocked4"
-                    };
-                    exec(
-                        "nft",
-                        args(&["delete", "element", "inet", "cgpanel", set, "{", ip, "}"]),
-                        None,
-                        30,
-                    )
-                    .await?;
-                }
+                "blocks" => {}
                 _ => {}
             }
             reg.items.remove(&op.id);
+            if kind == "blocks" {
+                block_access(reg).await?;
+            }
             if ["domains", "dns"].contains(&kind) {
                 dns_sync(reg).await?;
+            }
+            if kind == "domains" {
+                mail_agent::refresh(reg).await?;
+                let app = s(&item.data, "app_id");
+                if !app.is_empty() {
+                    workspace_agent::render_ide(
+                        reg,
+                        &Operation {
+                            action: "ide_status".into(),
+                            tenant: op.tenant.clone(),
+                            id: app.into(),
+                            data: json!({}),
+                        },
+                    )
+                    .await?;
+                }
             }
             if kind == "databases" {
                 db_access(reg).await?;
@@ -1161,26 +1286,30 @@ async fn main() -> Result<()> {
     };
     // Reapply persisted database filters and block lists after firewall/service restart.
     db_access(&registry).await?;
-    for item in registry.items.values().filter(|i| i.kind == "blocks") {
-        let ip = s(&item.data, "name");
-        let set = if ip.contains(':') {
-            "blocked6"
-        } else {
-            "blocked4"
-        };
-        let _ = exec(
-            "nft",
-            args(&["add", "element", "inet", "cgpanel", set, "{", ip, "}"]),
-            None,
-            30,
-        )
-        .await;
-    }
+    block_access(&registry).await?;
     // Refresh generated vhosts during upgrades so existing domains gain ACME and telemetry routes.
     for (id, item) in registry.items.iter().filter(|(_, i)| i.kind == "domains") {
         tls_agent::render_domain(&registry, id, item).await?;
     }
+    for (id, item) in registry
+        .items
+        .iter()
+        .filter(|(_, i)| i.kind == "apps" && i.data["ide_enabled"] == true)
+    {
+        workspace_agent::render_ide(
+            &registry,
+            &Operation {
+                action: "ide_status".into(),
+                tenant: item.tenant.clone(),
+                id: id.clone(),
+                data: json!({}),
+            },
+        )
+        .await?;
+    }
     workspace_agent::firewall(&registry).await?;
+    services_agent::refresh(&registry).await?;
+    mail_agent::refresh(&registry).await?;
     let reg = Arc::new(Mutex::new(registry));
     cron_agent::start(reg.clone());
     let socket = std::env::var("CGPANEL_AGENT_SOCKET").unwrap_or("/run/cgpanel/agent.sock".into());
@@ -1210,6 +1339,29 @@ async fn main() -> Result<()> {
                 return;
             }
             let result = match serde_json::from_str::<Operation>(&line) {
+                Ok(op) if op.action == "console_stream" => {
+                    static SLOTS: std::sync::LazyLock<tokio::sync::Semaphore> =
+                        std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(16));
+                    let result = async {
+                        let _permit = SLOTS
+                            .try_acquire()
+                            .map_err(|_| anyhow!("Console is busy; try again shortly"))?;
+                        let snapshot: Registry = serde_json::from_str(
+                            &tokio::fs::read_to_string(format!("{ROOT}/registry.json")).await?,
+                        )?;
+                        console_agent::stream(&snapshot, op, &mut writer).await
+                    }
+                    .await;
+                    if let Err(e) = result {
+                        let _ = writer
+                            .write_all(
+                                format!("{}\n", json!({"type":"error","message":e.to_string()}))
+                                    .as_bytes(),
+                            )
+                            .await;
+                    }
+                    return;
+                }
                 Ok(op)
                     if [
                         "telegram_send",
@@ -1221,6 +1373,9 @@ async fn main() -> Result<()> {
                         "zone_export",
                         "egress_status",
                         "workspace_files",
+                        "budget_status",
+                        "services_status",
+                        "protection_stats",
                         "runtime_status",
                         "runtime_catalog",
                         "ide_status",

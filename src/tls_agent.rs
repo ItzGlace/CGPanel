@@ -6,13 +6,14 @@ pub fn telemetry() -> &'static str {
 pub async fn render_domain(reg: &Registry, id: &str, item: &Item) -> Result<()> {
     let name = s(&item.data, "name");
     ensure!(cgpanel::domain(name), "Invalid domain");
+    let (global, protection, gate) = protection_agent::nginx(id, item)?;
     let app = s(&item.data, "app_id");
     let location = if app.is_empty() {
-        format!("root /srv/cgpanel/public/{id}; index index.html; location / {{ try_files $uri $uri/ =404; }}")
+        format!("root /srv/cgpanel/public/{id}; index index.html; location / {{ {gate} try_files $uri $uri/ =404; }}")
     } else {
         let app = reference(reg, app, &item.tenant, "apps")?;
         let port = app.data["port"].as_u64().context("Missing port")?;
-        format!("location / {{ proxy_pass http://127.0.0.1:{port}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto $scheme; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $cg_connection; proxy_read_timeout 60s; }}")
+        format!("location / {{ {gate} proxy_pass http://127.0.0.1:{port}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto $scheme; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $cg_connection; proxy_read_timeout 60s; }}")
     };
     let cname = s(&item.data, "cert_name");
     let expected = format!("cgp_{id}");
@@ -29,22 +30,40 @@ pub async fn render_domain(reg: &Registry, id: &str, item: &Item) -> Result<()> 
     } else {
         ""
     };
-    let common=format!("server_name {name}; {realip} limit_req zone=cgp_web burst=40 nodelay; limit_conn cgp_conn 30; client_max_body_size 32m; {} {location}",telemetry());
+    let common = format!(
+        "server_name {name}; {realip} {protection} client_max_body_size 32m; {} {location}",
+        telemetry()
+    );
     let conf = if let Some(cert) = cert {
         format!("server {{ listen 80; listen [::]:80; server_name {name}; {acme} location / {{ return 301 https://$host$request_uri; }} }}\nserver {{ listen 443 ssl; listen [::]:443 ssl; ssl_certificate /etc/letsencrypt/live/{cert}/fullchain.pem; ssl_certificate_key /etc/letsencrypt/live/{cert}/privkey.pem; ssl_protocols TLSv1.2 TLSv1.3; {common} }}\n")
     } else {
         format!("server {{ listen 80; listen [::]:80; {acme} {common} }}\n")
     };
+    let conf = format!("{global}{conf}");
     let file = format!("/etc/nginx/conf.d/cgp_{id}.conf");
     let old = tokio::fs::read_to_string(&file).await.ok();
     atomic(&file, &conf, 0o644).await?;
     if let Err(error) = run("nginx", &["-t"]).await {
         if let Some(old) = old {
             let _ = atomic(&file, &old, 0o644).await;
+        } else {
+            let _ = tokio::fs::remove_file(&file).await;
         }
         return Err(error);
     }
     run("systemctl", &["reload", "nginx"]).await?;
+    if !app.is_empty() {
+        workspace_agent::render_ide(
+            reg,
+            &Operation {
+                action: "ide_status".into(),
+                tenant: item.tenant.clone(),
+                id: app.into(),
+                data: json!({}),
+            },
+        )
+        .await?;
+    }
     Ok(())
 }
 pub async fn issue(reg: &mut Registry, op: &Operation) -> Result<Value> {

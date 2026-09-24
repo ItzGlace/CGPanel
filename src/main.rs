@@ -27,9 +27,13 @@ use std::{
 use tokio::sync::Mutex;
 mod admin_api;
 mod documentation;
+mod mail;
+mod mfa;
 mod monitoring;
+mod protection;
 mod v2;
 mod v4;
+mod v5;
 
 #[derive(Clone)]
 struct App {
@@ -226,7 +230,7 @@ fn client_ip(peer: IpAddr, headers: &HeaderMap) -> IpAddr {
 }
 async fn security_headers(req: Request, next: Next) -> Response {
     let mut res = next.run(req).await;
-    for (k,v) in [("x-content-type-options","nosniff"),("x-frame-options","DENY"),("referrer-policy","no-referrer"),("cache-control","no-store"),("content-security-policy","default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"),("permissions-policy","camera=(), microphone=(), geolocation=()")] { res.headers_mut().insert(axum::http::HeaderName::from_static(k),v.parse().unwrap()); }
+    for (k,v) in [("x-content-type-options","nosniff"),("x-frame-options","DENY"),("referrer-policy","no-referrer"),("cache-control","no-store"),("content-security-policy","default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"),("permissions-policy","camera=(), microphone=(), geolocation=()")] { if k!="content-security-policy" || !res.headers().contains_key(header::CONTENT_SECURITY_POLICY) {res.headers_mut().insert(axum::http::HeaderName::from_static(k),v.parse().unwrap());} }
     res
 }
 
@@ -234,6 +238,8 @@ async fn security_headers(req: Request, next: Next) -> Response {
 struct Login {
     username: String,
     password: String,
+    #[serde(default)]
+    code: String,
 }
 async fn login(
     State(app): State<App>,
@@ -295,6 +301,13 @@ async fn login(
     let token = format!("{}{}", id(), id());
     let csrf = id();
     let uid: String = row.get("id");
+    if !mfa::verify(&app, &uid, &input.code).await? {
+        audit(&app, &uid, "login:mfa_failed", &peer.ip().to_string()).await;
+        return Err(Error(
+            StatusCode::UNAUTHORIZED,
+            "Invalid credentials or MFA code".into(),
+        ));
+    }
     sqlx::query("DELETE FROM sessions WHERE expires<unixepoch()")
         .execute(&app.db)
         .await?;
@@ -631,11 +644,9 @@ async fn create_resource(
             if ips.len() > 16
                 || ips
                     .iter()
-                    .any(|x| !cgpanel::valid_ip(x.as_str().unwrap_or("")))
+                    .any(|x| cgpanel::network::network(x.as_str().unwrap_or("")).is_err())
             {
-                return Err(bad(
-                    "Database access requires exact IP addresses, at most 16",
-                ));
+                return Err(bad("Use valid IP addresses or CIDR prefixes, at most 16"));
             }
             v["allowed_ips"] = json!(ips);
             "create_database"
@@ -683,7 +694,7 @@ async fn create_resource(
             if user.role != "admin" {
                 return Err(forbidden());
             }
-            if !cgpanel::valid_ip(&name) {
+            if cgpanel::network::network(&name).is_err() {
                 return Err(bad("Enter one exact IPv4 or IPv6 address"));
             }
             "create_block"
@@ -695,6 +706,9 @@ async fn create_resource(
     } else {
         &name
     });
+    if kind == "apps" {
+        v = cgpanel::application_input(&v);
+    }
     let result = host(&app, &user, action, &owner, &rid, v.clone()).await?;
     let mut saved = v;
     if let Some(m) = saved.as_object_mut() {
@@ -916,6 +930,10 @@ async fn main() -> anyhow::Result<()> {
         .merge(documentation::routes())
         .merge(v2::routes())
         .merge(v4::routes())
+        .merge(v5::routes())
+        .merge(mfa::routes())
+        .merge(mail::routes())
+        .merge(protection::routes())
         .merge(monitoring::routes())
         .route("/me", get(me))
         .route("/logout", post(logout))
@@ -932,6 +950,7 @@ async fn main() -> anyhow::Result<()> {
         .route_layer(middleware::from_fn_with_state(app.clone(), authenticate));
     let router = Router::new()
         .merge(monitoring::public_routes())
+        .merge(protection::public_routes())
         .route(
             "/",
             get(|| async { Html(include_str!("../web/index.html")) }),
@@ -969,6 +988,24 @@ async fn main() -> anyhow::Result<()> {
                 (
                     [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
                     include_str!("../web/features.js"),
+                )
+            }),
+        )
+        .route(
+            "/mail.js",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("../web/mail.js"),
+                )
+            }),
+        )
+        .route(
+            "/nav-icons.js",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("../web/nav-icons.js"),
                 )
             }),
         )

@@ -1,8 +1,8 @@
 table inet cgpanel {
- set blocked4 { type ipv4_addr; }
- set blocked6 { type ipv6_addr; }
- set database4 { type ipv4_addr; }
- set database6 { type ipv6_addr; }
+ set blocked4 { type ipv4_addr; flags interval; }
+ set blocked6 { type ipv6_addr; flags interval; }
+ set database4 { type ipv4_addr; flags interval; }
+ set database6 { type ipv6_addr; flags interval; }
  chain input {
   type filter hook input priority 0; policy drop;
   iifname "lo" accept

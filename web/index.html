@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#132e29" />
+    <meta name="theme-color" content="#32292F" />
     <title>CGPanel · Your server, beautifully managed</title>
-    <link rel="icon" href="/assets/cgpanel-mark.png" />
+    <link rel="icon" href="/assets/brand-v5.png" />
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body
-    class="min-h-screen bg-[#f5f7f5] font-sans text-slate-800 antialiased selection:bg-lime-200"
+    class="min-h-screen bg-gradient-to-br from-[#f2eff3] via-[#f8f6f9] to-[#d8f1ed] font-sans text-slate-800 antialiased selection:bg-mint [&_button]:backdrop-blur-xl [&_button]:motion-safe:transition-all [&_button]:motion-safe:duration-200 [&_button:active]:motion-safe:scale-[0.98] [&_#content_section]:backdrop-blur-xl [&_#content_section]:bg-white/75 [&_#content_section]:border-white/80 [&_#content_section]:shadow-sm"
   >
     <section
       id="login-screen"
@@ -28,11 +28,11 @@
           aria-hidden="true"
         ></div>
         <a
-          href="/"
+          href="https://github.com/ItzGlace/CGPanel" target="_blank" rel="noopener noreferrer"
           class="relative flex items-center gap-3 text-2xl font-semibold tracking-tight"
           ><img
             class="size-11 rounded-xl"
-            src="/assets/cgpanel-mark.png"
+            src="/assets/brand-v5.png"
             alt="CGPanel logo"
           />CGPanel
           <span
@@ -75,7 +75,7 @@
       <div
         class="flex flex-col items-center justify-center bg-white px-8 py-14 lg:px-20"
       >
-        <form id="login" class="my-auto w-full max-w-sm">
+        <form id="login" method="post" action="/api/login" class="my-auto w-full max-w-sm">
           <span
             class="mb-5 inline-flex size-12 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50"
             ><img class="size-6" src="/assets/icons/lock-keyhole.svg" alt=""
@@ -103,7 +103,8 @@
               type="password"
               autocomplete="current-password"
               required /></label
-          ><button
+          ><label class="mb-4 block text-xs text-slate-600">Authenticator or recovery code (if enabled)<input name="code" autocomplete="one-time-code" maxlength="128" class="mt-2 block w-full rounded-xl border border-white/80 bg-white/70 px-4 py-3 outline-none focus:ring-2 focus:ring-mint" /></label>
+<button
             class="flex w-full cursor-pointer items-center justify-between rounded-lg bg-forest px-5 py-3.5 text-sm font-medium text-white transition hover:bg-emerald-900 disabled:opacity-50"
             type="submit"
           >
@@ -125,7 +126,7 @@
           </div>
         </form>
         <p class="mt-14 text-[10px] text-slate-400">
-          CGPanel 0.4 alpha · Community edition
+          CGPanel 0.5 alpha · Community edition
         </p>
       </div>
     </section>
@@ -135,10 +136,10 @@
       >
         <a
           class="mx-3 mb-10 flex items-center gap-3 text-[22px] font-semibold tracking-tight"
-          href="#home"
+          href="https://github.com/ItzGlace/CGPanel" target="_blank" rel="noopener noreferrer"
           ><img
             class="size-10 rounded-xl"
-            src="/assets/cgpanel-mark.png"
+            src="/assets/brand-v5.png"
             alt="CGPanel logo"
           />CGPanel<span
             class="ml-auto rounded border border-emerald-100/20 px-1 text-[9px] font-normal text-emerald-100/50"
@@ -199,7 +200,7 @@
               id="avatar"
               class="flex size-9 items-center justify-center rounded-full bg-[#edf2eb] font-semibold text-emerald-800"
               >A</span
-            ><span id="username" class="hidden sm:inline"></span
+            ><button type="button" data-help-tour class="mr-4 rounded-lg border border-white/60 bg-white/60 px-3 py-2 text-xs text-emerald-700">Quick tour</button><span id="username" class="hidden sm:inline"></span
             ><img
               class="size-3.5 opacity-50"
               src="/assets/icons/chevron-down.svg"

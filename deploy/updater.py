@@ -8,7 +8,7 @@ os.umask(0o077)
 lock=(ROOT/'lock').open('w')
 try: fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 except BlockingIOError: raise SystemExit(0)
-def run(*command): return subprocess.run(command,check=True,capture_output=True,text=True,timeout=180)
+def run(*command): return subprocess.run(command,check=True,capture_output=True,text=True,timeout=1800)
 def write(value):
     temp=ROOT/'status.tmp';temp.write_text(json.dumps(value));temp.replace(ROOT/'status.json')
 def version(value):
