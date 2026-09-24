@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+- Disable every SSH forwarding type, including Unix-socket forwarding, for existing CGPanel SFTP-only profiles during upgrades.
+- Validate SSH configuration before reload and restore it on failure. Existing SFTP credentials and workspace mounts are preserved.
+- Add reproducible cross-server SFTP transfer and confinement checks.
+
 ## v0.4.0
 
 - Replaced the basic file form with folder browsing, chunked transfers, multi-selection, Trash, permissions and revision-checked editing.

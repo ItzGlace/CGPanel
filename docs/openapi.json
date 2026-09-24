@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "CGPanel Administrator and Management API",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "description": "Community alpha. Session + CSRF or administrator bearer tokens. See docs/API.md for operational boundaries.",
     "license": {
       "name": "AGPL-3.0-or-later",

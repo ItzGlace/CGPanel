@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json, pathlib, re, shutil, subprocess, sys
 root=pathlib.Path(sys.argv[1]).resolve()
+subprocess.run(['python3',str(root/'deploy/harden-sftp.py')],check=True)
 lib=pathlib.Path('/usr/local/lib/cgpanel');lib.mkdir(parents=True,exist_ok=True)
 shutil.copytree(root/'deploy/php-runtime',lib/'php-runtime',dirs_exist_ok=True)
 shutil.copy2(root/'deploy/updater.py',lib/'updater.py')
