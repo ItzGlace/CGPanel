@@ -29,6 +29,7 @@ mod admin_api;
 mod documentation;
 mod monitoring;
 mod v2;
+mod v4;
 
 #[derive(Clone)]
 struct App {
@@ -495,6 +496,9 @@ async fn update_user(
         .bind(&uid)
         .execute(&app.db)
         .await?;
+    if !enabled {
+        host(&app, &user, "tenant_stop_ide", &uid, &uid, json!({})).await?;
+    }
     audit(&app, &user.id, "user:update", &uid).await;
     Ok(Json(json!({"ok":true})))
 }
@@ -911,6 +915,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(admin_api::routes())
         .merge(documentation::routes())
         .merge(v2::routes())
+        .merge(v4::routes())
         .merge(monitoring::routes())
         .route("/me", get(me))
         .route("/logout", post(logout))
@@ -977,7 +982,19 @@ async fn main() -> anyhow::Result<()> {
                 )
             }),
         )
-        .route("/healthz", get(|| async { Json(json!({"status":"ok"})) }))
+        .route(
+            "/workspace.js",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("../web/workspace.js"),
+                )
+            }),
+        )
+        .route(
+            "/healthz",
+            get(|| async { Json(json!({"status":"ok","version":env!("CARGO_PKG_VERSION")})) }),
+        )
         .route("/api/login", post(login))
         .nest("/api", api)
         .layer(DefaultBodyLimit::max(512 * 1024))

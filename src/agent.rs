@@ -5,6 +5,7 @@ mod egress_agent;
 mod integrations_agent;
 mod tls_agent;
 mod transfers_agent;
+mod workspace_agent;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use cgpanel::{identifier, Operation};
 use serde::{Deserialize, Serialize};
@@ -51,7 +52,7 @@ async fn bounded<R: AsyncRead + Unpin>(mut r: R) -> Result<Vec<u8>> {
         if n == 0 {
             break;
         }
-        let remaining = 65536usize.saturating_sub(result.len());
+        let remaining = 2097152usize.saturating_sub(result.len());
         result.extend_from_slice(&buf[..n.min(remaining)]);
     }
     Ok(result)
@@ -234,7 +235,11 @@ fn starter(runtime: &str) -> (&'static str, &'static str, &'static str) {
 async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
     ensure!(identifier(s(&op.data, "name")), "Invalid application name");
     let runtime = s(&op.data, "runtime");
-    let image = image(runtime)?;
+    let image = if s(&op.data, "version").is_empty() {
+        image(runtime)?
+    } else {
+        workspace_agent::image(runtime, s(&op.data, "version"))?
+    };
     ensure!(
         ["web", "worker"].contains(&s(&op.data, "mode")),
         "Invalid application mode"
@@ -243,7 +248,8 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
     let dir = appdir(&op.tenant, &op.id);
     tokio::fs::create_dir_all(&dir).await?;
     let (file, content, default) = starter(runtime);
-    if op.action != "egress_configure" {
+    if !["egress_configure", "runtime_configure", "runtime_activate"].contains(&op.action.as_str())
+    {
         tokio::fs::write(format!("{dir}/{file}"), content).await?;
     }
     run(
@@ -255,7 +261,9 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         ],
     )
     .await?;
-    let port = if op.action == "egress_configure" {
+    let port = if ["egress_configure", "runtime_configure", "runtime_activate"]
+        .contains(&op.action.as_str())
+    {
         reg.items
             .get(&op.id)
             .and_then(|i| i.data["port"].as_u64())
@@ -285,7 +293,7 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         "--name",
         &container(&op.id),
         "--restart",
-        "on-failure:3",
+        if op.action == "runtime_configure" { "no" } else { "on-failure:3" },
         "--userns",
         &user_namespace,
         "--user",
@@ -673,6 +681,85 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
         ensure!(!reg.items.contains_key(&op.id), "Resource already exists");
     }
     match op.action.as_str() {
+        "workspace_files" => workspace_agent::files(reg, &op).await,
+        "runtime_catalog" => Ok(workspace_agent::catalog()),
+        "runtime_status" => {
+            let i = owned(reg, &op, "apps")?;
+            Ok(
+                json!({"runtime":i.data["runtime"],"version":i.data["version"],"image":i.data["image"],"command":i.data["command"]}),
+            )
+        }
+        "runtime_configure" => workspace_agent::runtime(reg, &op).await,
+        "ide_configure" => workspace_agent::ide(reg, &op).await,
+        "ide_status" => workspace_agent::ide_status(reg, &op).await,
+        "ide_password" => {
+            let i = owned(reg, &op, "apps")?;
+            ensure!(i.data["ide_enabled"] == true, "IDE is not enabled");
+            Ok(json!({"password":i.data["ide_password"]}))
+        }
+        "tenant_stop_ide" => {
+            let ids: Vec<_> = reg
+                .items
+                .iter()
+                .filter(|(_, i)| {
+                    i.tenant == op.tenant && i.kind == "apps" && i.data["ide_enabled"] == true
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in ids {
+                workspace_agent::ide(
+                    reg,
+                    &Operation {
+                        action: "ide_configure".into(),
+                        tenant: op.tenant.clone(),
+                        id,
+                        data: json!({"enabled":false}),
+                    },
+                )
+                .await?;
+            }
+            Ok(json!({"stopped":true}))
+        }
+        "update_status" => {
+            let config = tokio::fs::read_to_string("/etc/cgpanel/updates.json")
+                .await
+                .unwrap_or("{}".into());
+            let status = tokio::fs::read_to_string("/var/lib/cgpanel-updates/status.json")
+                .await
+                .unwrap_or("{}".into());
+            Ok(
+                json!({"installed":env!("CARGO_PKG_VERSION"),"config":serde_json::from_str::<Value>(&config)?,"status":serde_json::from_str::<Value>(&status)?,"repository":"https://github.com/ItzGlace/CGPanel"}),
+            )
+        }
+        "update_configure" => {
+            match s(&op.data, "action") {
+                "settings" => {
+                    ensure!(op.data["enabled"].is_boolean(), "enabled must be a boolean");
+                    atomic(
+                        "/etc/cgpanel/updates.json",
+                        &json!({"enabled":op.data["enabled"]}).to_string(),
+                        0o600,
+                    )
+                    .await?;
+                }
+                "check" => {
+                    run(
+                        "systemctl",
+                        &["start", "--no-block", "cgpanel-update-check.service"],
+                    )
+                    .await?;
+                }
+                "apply" => {
+                    run(
+                        "systemctl",
+                        &["start", "--no-block", "cgpanel-update.service"],
+                    )
+                    .await?;
+                }
+                _ => bail!("Choose settings, check or apply"),
+            };
+            Ok(json!({"accepted":true}))
+        }
         "tls_issue" | "tls_status" | "tls_panel_ip" | "zone_export" | "cdn_configure" => {
             tls_agent::execute(reg, &op).await
         }
@@ -982,6 +1069,18 @@ async fn execute(reg: &mut Registry, op: Operation) -> Result<Value> {
             let item = owned(reg, &op, kind)?.clone();
             match kind {
                 "apps" => {
+                    if item.data["ide_installed"] == true {
+                        workspace_agent::ide(
+                            reg,
+                            &Operation {
+                                action: "ide_configure".into(),
+                                tenant: op.tenant.clone(),
+                                id: op.id.clone(),
+                                data: json!({"enabled":false}),
+                            },
+                        )
+                        .await?;
+                    }
                     pod(
                         &op.tenant,
                         args(&["rm", "-f", "--ignore", &container(&op.id)]),
@@ -1081,6 +1180,7 @@ async fn main() -> Result<()> {
     for (id, item) in registry.items.iter().filter(|(_, i)| i.kind == "domains") {
         tls_agent::render_domain(&registry, id, item).await?;
     }
+    workspace_agent::firewall(&registry).await?;
     let reg = Arc::new(Mutex::new(registry));
     cron_agent::start(reg.clone());
     let socket = std::env::var("CGPANEL_AGENT_SOCKET").unwrap_or("/run/cgpanel/agent.sock".into());
@@ -1120,6 +1220,12 @@ async fn main() -> Result<()> {
                         "tls_status",
                         "zone_export",
                         "egress_status",
+                        "workspace_files",
+                        "runtime_status",
+                        "runtime_catalog",
+                        "ide_status",
+                        "ide_password",
+                        "update_status",
                     ]
                     .contains(&op.action.as_str()) =>
                 {

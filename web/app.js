@@ -1,3 +1,4 @@
+import { workspaceTools } from "/workspace.js";
 import { features } from "/features.js";
 import { documentation } from "/documentation.js";
 import { icon as glyph } from "/icons.js";
@@ -11,13 +12,18 @@ const esc = (value) =>
         c
       ],
   );
+let routeController, renderEpoch = 0;
 let me,
   current = "home",
   userList = [],
   resources = {},
   csrf = "",
   pending = false;
+const tools4 = workspaceTools({api,esc,glyph,toast,getCurrent:()=>current,getMe:()=>me});
 const pages = {
+  ide: ["Workspace IDE", "Code, install extensions, and manage Git in your browser.", "folder-code"],
+  runtimes: ["Runtime versions", "Choose the language version for each application.", "boxes"],
+  updates: ["Panel updates", "Manage automatic updates from stable GitHub releases.", "settings"],
   docs: [
     "Documentation",
     "Guides for building, operating, and automating your workspace.",
@@ -91,7 +97,7 @@ const pages = {
   ],
   files: [
     "File manager",
-    "Read and edit application files inside an isolated workspace.",
+    "Browse, upload, organize, and edit your website files.",
     "folder-code",
   ],
   terminal: [
@@ -142,6 +148,7 @@ async function api(path, method = "GET", body) {
     headers: { "Content-Type": "application/json" },
   };
   if (method !== "GET") options.headers["x-csrf-token"] = csrf;
+  if (method === "GET" && routeController) options.signal = routeController.signal;
   if (body !== undefined) options.body = JSON.stringify(body);
   const response = await fetch("/api" + path, options);
   const data = await response
@@ -202,6 +209,8 @@ function nav() {
     "databases",
     "dns",
     "files",
+    "ide",
+    "runtimes",
     "terminal",
     "schedules",
     "backup-center",
@@ -212,7 +221,7 @@ function nav() {
     "egress",
     "jobs",
     "security",
-    ...(me.role === "admin" ? ["users", "blocks", "admin-api"] : []),
+    ...(me.role === "admin" ? ["users", "blocks", "admin-api", "updates"] : []),
     "audit",
     "docs",
   ];
@@ -235,6 +244,9 @@ async function load(kind) {
   return resources[kind];
 }
 async function render() {
+  const epoch = ++renderEpoch;
+  routeController?.abort();
+  routeController = new AbortController();
   current = location.hash.slice(1) || "home";
   if (!pages[current]) current = "home";
   $(".sidebar").classList.remove("open");
@@ -275,11 +287,12 @@ async function render() {
     '<div class="busy flex min-h-72 items-center justify-center text-xs text-slate-400">Loading your workspace…</div>';
   try {
     if (me.role === "admin" && !userList.length) userList = await api("/users");
+    if (epoch !== renderEpoch) return;
     if (current === "home") await dashboard();
     else if (current === "security") security();
     else if (current === "audit") await auditPage();
-    else if (current === "terminal" || current === "files")
-      await workspace(current);
+    else if (["files","ide","runtimes","updates"].includes(current)) await tools4.render(current);
+    else if (current === "terminal") await workspace(current);
     else if (current === "settings") settings();
     else if (current === "docs" || current === "admin-api")
       await docs.render(current);
@@ -298,6 +311,7 @@ async function render() {
     else if (current === "users") await usersPage();
     else await resourcePage(current);
   } catch (e) {
+    if (epoch !== renderEpoch || e.name === "AbortError") return;
     $("#content").innerHTML =
       `<div class="info-box mb-5 rounded-xl border px-5 py-4 text-xs leading-6 warning-box border-amber-200/60 bg-amber-50/60 text-amber-900/65">${esc(e.message)}</div>`;
   }
@@ -309,6 +323,7 @@ function toolGroup(title, items) {
 }
 async function dashboard() {
   const d = await api("/overview");
+  if (current !== "home") return;
   const c = d.counts;
   const memory = d.host.memory || [];
   const total = parseInt((memory[0] || "").split(":")[1]) || 0;
@@ -991,6 +1006,7 @@ function security() {
 }
 async function auditPage() {
   const d = await api("/overview");
+  if (current !== "home") return;
   $("#content").innerHTML =
     `<div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs table-wrap overflow-x-auto"><table class="data-table w-full border-collapse whitespace-nowrap text-left [&_th]:bg-slate-50/70 [&_th]:px-5 [&_th]:py-3.5 [&_th]:text-[9px] [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-slate-400 [&_td]:border-t [&_td]:border-slate-100 [&_td]:px-5 [&_td]:py-5 [&_td]:text-xs [&_td_small]:mt-1 [&_td_small]:block [&_td_small]:max-w-48 [&_td_small]:truncate [&_td_small]:text-[10px] [&_td_small]:text-slate-400 [&_tbody_tr]:transition [&_tbody_tr:hover]:bg-slate-50/50"><thead><tr><th>Action</th><th>Actor</th><th>Target</th><th>Time (UTC)</th></tr></thead><tbody>${d.events.map((e) => `<tr><td>${esc(e.action)}</td><td>${esc(e.actor)}</td><td>${esc(e.target)}</td><td>${esc(e.created)}</td></tr>`).join("")}</tbody></table></div><p>Showing the most recent 20 events available to your account.</p>`;
 }

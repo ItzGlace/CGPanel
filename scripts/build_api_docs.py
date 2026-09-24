@@ -63,6 +63,8 @@ for kind,(fields,required,example) in integration_fields.items():
     schemas[kind.title()+'Integration']=obj({'id':S,'owner':S,'name':S,'type':enum(kind),'proxy_id':S,**fields},['name','type'])
 schemas['IntegrationSave']={'oneOf':[ref(k.title()+'Integration') for k in integration_fields], 'description':'New integrations require the fields described by each type; blank secret fields preserve existing values on an edit. Send complete nonsecret configuration. Cloudflare DNS tooling uses its own direct connection.'}
 job_fields = {
+    'runtime': ({'version':S,'command':S}, {'target':'APP_ID','version':'3.14','command':''}),
+    'ide': ({'enabled':B,'rotate':B}, {'target':'APP_ID','enabled':True}),
     'full_backup': ({'database_ids':IDS,'destinations':IDS,'quiesce':B}, {'target':'APP_ID','database_ids':['DATABASE_ID'],'destinations':[],'quiesce':True}),
     'backup_deliver': ({'destinations':IDS}, {'target':'BACKUP_ID','owner':'TENANT_ID','destinations':['STORAGE_ID']}),
     'restore_full': ({'backup_id':S,'confirm':enum('RESTORE')}, {'target':'APP_ID','backup_id':'BACKUP_ID','confirm':'RESTORE'}),
@@ -89,6 +91,13 @@ def endpoint(path, method, title, tag, description, request=None, example=None, 
         op['requestBody']={'required':True,'content':{'application/json':content}}
     paths.setdefault(path,{})[method]=op
 
+endpoint('/api/v4/files/{id}','post','Workspace file operations','Workspace','Owned application only. See the v0.4 guide for bounded uploads/downloads, revision-checked edits and file operations. Works with stopped applications.',O,{'operation':'list','path':'','offset':0})
+endpoint('/api/v4/runtimes','get','Approved runtime versions','Workspace','Version tracks available for per-application runtime jobs.')
+endpoint('/api/v4/runtimes/{id}','get','Current application runtime','Workspace','Owned application runtime, image and command.')
+endpoint('/api/v4/ide/{id}','get','Workspace IDE status','Workspace','Owned application code-server installation, state and separate-origin URL.')
+endpoint('/api/v4/ide/{id}/password','post','Read workspace IDE password','Workspace','Session and CSRF only. Owned application must have its IDE enabled. Passwords never appear in job results.',O,{},session=True)
+endpoint('/api/v4/updates','get','Panel update status','Administration','Administrator only. Installed version, settings and latest updater state.')
+endpoint('/api/v4/updates','post','Configure or run panel updates','Administration','Administrator only. settings changes enabled; check/apply queue a root-owned system service.',obj({'action':enum('settings','check','apply'),'enabled':B},['action']),{'action':'settings','enabled':False})
 owner=query('owner','Administrator only: tenant ID. Omit to use the authenticated caller; not an all-tenant query.')
 endpoint('/healthz','get','HTTP process health','Public','Does not check broker, DNS, containers or databases.',public=True)
 endpoint('/api/login','post','Sign in','Authentication','Sets cg_session cookie for eight hours and returns csrf. Login throttling applies.', 'Login', {'username':'admin','password':'YOUR_PASSWORD'}, public=True)

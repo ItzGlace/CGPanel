@@ -1,6 +1,6 @@
 [package]
 name = "cgpanel"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 description = "Free, self-hosted Rust hosting control panel"
@@ -20,6 +20,10 @@ path = "src/egress.rs"
 [[bin]]
 name = "cgpanel-acme-hook"
 path = "src/acme_hook.rs"
+
+[[bin]]
+name = "cgpanel-workspace"
+path = "src/workspace.rs"
 
 [dependencies]
 anyhow = "1"

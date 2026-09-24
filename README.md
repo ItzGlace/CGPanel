@@ -154,3 +154,7 @@ Never commit real credentials, registry files, `.env` files, certificates with p
 ## License
 
 GNU Affero General Public License, version 3 or later (AGPL-3.0-or-later). See [LICENSE](LICENSE). Contributions are welcome under the same license.
+
+## Files, IDE and updates
+
+CGPanel v0.4 adds a folder-based file manager with uploads/downloads and browser editing, optional code-server, per-application runtime versions and administrator-controlled automatic stable release updates. Read the [workspace and update guide](docs/V0.4-GUIDE.md) for usage, limits and API examples. Existing custom runtime images remain unchanged on panel upgrade.

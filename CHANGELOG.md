@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4.0
+
+- Replaced the basic file form with folder browsing, chunked transfers, multi-selection, Trash, permissions and revision-checked editing.
+- Added an unprivileged Rust file helper with descriptor-based path confinement; files work when apps are stopped.
+- Added optional per-workspace code-server with Git, private authentication and a separate HTTPS origin.
+- Added approved language version tracks, PHP MySQL/FPM profiles, and runtime startup rollback.
+- Added administrator-controlled stable GitHub release updates, verified binary bundles and recovery snapshots.
+- Documented new APIs and deployment/update boundaries.
+
+
 ## 0.3.0 — 2026-09-24
 
 - Bundled Documentation page with tenant setup, administrator operations and API guides; GitHub documentation index and troubleshooting instructions.

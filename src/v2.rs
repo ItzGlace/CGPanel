@@ -136,7 +136,7 @@ async fn queue(
     } else {
         let resource = owned(&app, &user, &target).await?;
         let expected = match kind.as_str() {
-            "full_backup" | "restore_full" | "egress" => "apps",
+            "full_backup" | "restore_full" | "egress" | "runtime" | "ide" => "apps",
             "tls" | "seo" => "domains",
             _ => return Err(bad("Unsupported background job")),
         };
@@ -177,7 +177,16 @@ async fn retry(
     let r = sqlx::query("SELECT * FROM jobs WHERE id=? AND (owner=? OR ?='admin') AND status IN ('failed','interrupted')")
         .bind(&rid).bind(&user.id).bind(&user.role).fetch_optional(&app.db).await?.ok_or_else(|| bad("Failed job not found"))?;
     let kind: String = r.get("kind");
-    if ["restore_full", "tls", "panel_tls", "egress"].contains(&kind.as_str()) {
+    if [
+        "restore_full",
+        "tls",
+        "panel_tls",
+        "egress",
+        "runtime",
+        "ide",
+    ]
+    .contains(&kind.as_str())
+    {
         return Err(bad("Review the operation and submit a new job"));
     }
     let next = enqueue(
@@ -307,6 +316,8 @@ async fn run_one(app: &App, alerts: bool) -> Result<(), Error> {
         "panel_tls" => "tls_panel_ip",
         "seo" => "site_seo",
         "egress" => "egress_configure",
+        "runtime" => "runtime_configure",
+        "ide" => "ide_configure",
         "monitor_alert" => "telegram_send",
         _ => "invalid_job",
     };

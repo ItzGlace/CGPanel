@@ -243,6 +243,29 @@ pub async fn panel_ip(op: &Operation) -> Result<Value> {
                 "/etc/letsencrypt/live/cgp-panel-ip/privkey.pem",
             );
         atomic(file, &config, 0o644).await?;
+        if let Ok(mut entries) = tokio::fs::read_dir("/etc/nginx/cgpanel-ide").await {
+            while let Some(entry) = entries.next_entry().await? {
+                if entry.path().extension().and_then(|v| v.to_str()) != Some("conf") {
+                    continue;
+                }
+                let path = entry.path();
+                let ide = tokio::fs::read_to_string(&path).await?;
+                atomic(
+                    path.to_str()
+                        .ok_or_else(|| anyhow!("Invalid IDE configuration path"))?,
+                    &ide.replace(
+                        "/etc/cgpanel/panel.crt",
+                        "/etc/letsencrypt/live/cgp-panel-ip/fullchain.pem",
+                    )
+                    .replace(
+                        "/etc/cgpanel/panel.key",
+                        "/etc/letsencrypt/live/cgp-panel-ip/privkey.pem",
+                    ),
+                    0o644,
+                )
+                .await?;
+            }
+        }
         run("nginx", &["-t"]).await?;
         run("systemctl", &["reload", "nginx"]).await?;
     }

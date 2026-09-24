@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "CGPanel Administrator and Management API",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "Community alpha. Session + CSRF or administrator bearer tokens. See docs/API.md for operational boundaries.",
     "license": {
       "name": "AGPL-3.0-or-later",
@@ -16,6 +16,389 @@
     }
   ],
   "paths": {
+    "/api/v4/files/{id}": {
+      "post": {
+        "operationId": "post_api_v4_files_id",
+        "summary": "Workspace file operations",
+        "tags": [
+          "Workspace"
+        ],
+        "description": "Owned application only. See the v0.4 guide for bounded uploads/downloads, revision-checked edits and file operations. Works with stopped applications.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "example": {
+                "operation": "list",
+                "path": "",
+                "offset": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v4/runtimes": {
+      "get": {
+        "operationId": "get_api_v4_runtimes",
+        "summary": "Approved runtime versions",
+        "tags": [
+          "Workspace"
+        ],
+        "description": "Version tracks available for per-application runtime jobs.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v4/runtimes/{id}": {
+      "get": {
+        "operationId": "get_api_v4_runtimes_id",
+        "summary": "Current application runtime",
+        "tags": [
+          "Workspace"
+        ],
+        "description": "Owned application runtime, image and command.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v4/ide/{id}": {
+      "get": {
+        "operationId": "get_api_v4_ide_id",
+        "summary": "Workspace IDE status",
+        "tags": [
+          "Workspace"
+        ],
+        "description": "Owned application code-server installation, state and separate-origin URL.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v4/ide/{id}/password": {
+      "post": {
+        "operationId": "post_api_v4_ide_id_password",
+        "summary": "Read workspace IDE password",
+        "tags": [
+          "Workspace"
+        ],
+        "description": "Session and CSRF only. Owned application must have its IDE enabled. Passwords never appear in job results.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "example": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/v4/updates": {
+      "get": {
+        "operationId": "get_api_v4_updates",
+        "summary": "Panel update status",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. Installed version, settings and latest updater state.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v4_updates",
+        "summary": "Configure or run panel updates",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. settings changes enabled; check/apply queue a root-owned system service.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "settings",
+                      "check",
+                      "apply"
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "action"
+                ]
+              },
+              "example": {
+                "action": "settings",
+                "enabled": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "get_healthz",
@@ -3164,6 +3547,60 @@
         ],
         "description": "New integrations require the fields described by each type; blank secret fields preserve existing values on an edit. Send complete nonsecret configuration. Cloudflare DNS tooling uses its own direct connection."
       },
+      "runtimeJob": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "runtime"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ]
+      },
+      "ideJob": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ide"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "rotate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ]
+      },
       "full_backupJob": {
         "type": "object",
         "properties": {
@@ -3406,6 +3843,12 @@
       },
       "JobSubmission": {
         "oneOf": [
+          {
+            "$ref": "#/components/schemas/runtimeJob"
+          },
+          {
+            "$ref": "#/components/schemas/ideJob"
+          },
           {
             "$ref": "#/components/schemas/full_backupJob"
           },

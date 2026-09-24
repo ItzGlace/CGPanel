@@ -1,0 +1,16 @@
+ARG PHP_VERSION=8.4
+ARG PHP_REGISTRY=docker.io
+FROM ${PHP_REGISTRY}/library/php:${PHP_VERSION}-fpm-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends nginx-light ca-certificates \
+    && docker-php-ext-install -j1 pdo_mysql mysqli \
+    && if ! php -m | grep -q 'Zend OPcache'; then docker-php-ext-install -j1 opcache; fi \
+    && rm -rf /var/lib/apt/lists/*
+COPY nginx.conf php-fpm.conf headers.conf /opt/lunar/
+COPY php.ini /usr/local/etc/php/conf.d/99-lunar.ini
+COPY start.sh /usr/local/bin/lunar-start
+COPY start.sh /usr/local/bin/cgpanel-php-start
+RUN chmod 755 /usr/local/bin/lunar-start /usr/local/bin/cgpanel-php-start
+LABEL org.opencontainers.image.title="CGPanel PHP-FPM and Unity WebGL runtime"
+EXPOSE 8080
+STOPSIGNAL SIGTERM
+CMD ["/usr/local/bin/lunar-start"]

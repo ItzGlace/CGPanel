@@ -20,7 +20,7 @@ install -d -m 0750 -o cgpanel -g cgpanel /var/lib/cgpanel
 install -d -m 0755 /usr/local/lib/cgpanel /srv/cgpanel /srv/cgpanel/public /etc/cgpanel /etc/bind/cgpanel
 install -d -m 0711 /srv/cgpanel/tenants
 install -d -m 0700 /var/lib/cgpanel-agent /var/lib/cgpanel-agent/backups
-install -m 0755 target/release/cgpanel target/release/cgpanel-agent /usr/local/bin/
+install -m 0755 target/release/cgpanel target/release/cgpanel-agent target/release/cgpanel-workspace /usr/local/bin/
 for f in /etc/nftables.conf /etc/bind/named.conf.local /etc/bind/named.conf.options /etc/postgresql/16/main/pg_hba.conf; do
  [[ -f "$f.pre-cgpanel" ]] || cp -a "$f" "$f.pre-cgpanel"
 done
@@ -137,6 +137,8 @@ if [[ ! -f /var/lib/cgpanel/panel.db ]]; then
  runuser -u cgpanel -- env CGPANEL_DB=/var/lib/cgpanel/panel.db CGPANEL_ADMIN_PASSWORD="$CGPANEL_ADMIN_PASSWORD" /usr/local/bin/cgpanel bootstrap
  unset CGPANEL_ADMIN_PASSWORD
 fi
+python3 deploy/setup-v0.4.py "$CG_SOURCE"
+printf '0.4.0\n' > /etc/cgpanel/version
 systemctl restart cgpanel-agent cgpanel
 systemctl is-active --quiet cgpanel-agent cgpanel
 echo "CGPanel installed: https://${CGPANEL_PUBLIC_IP}:2083"
