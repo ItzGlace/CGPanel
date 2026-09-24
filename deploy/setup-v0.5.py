@@ -63,7 +63,7 @@ if updated!=live:
     script='delete table inet cgpanel\n'+updated
     run('nft','-c','-f','-',input=script,text=True);run('nft','-f','-',input=script,text=True)
 path=pathlib.Path('/etc/cgpanel/firewall.nft');path.write_text(firewall_upgrade(path.read_text()))
-pathlib.Path('/etc/nginx/conf.d/03-cgpanel-ide.conf').write_text('server { listen 8443 ssl default_server; listen [::]:8443 ssl default_server; ssl_reject_handshake on; }\ninclude /etc/nginx/cgpanel-ide/*.conf;\n')
+pathlib.Path('/etc/nginx/conf.d/03-cgpanel-ide.conf').write_text('server { listen 8443 ssl default_server; listen [::]:8443 ssl default_server; ssl_certificate /etc/cgpanel/panel.crt; ssl_certificate_key /etc/cgpanel/panel.key; return 444; }\ninclude /etc/nginx/cgpanel-ide/*.conf;\n')
 pathlib.Path('/etc/cgpanel/ftps-users').mkdir(mode=0o700,exist_ok=True)
 for name,value in [('ftps-users.list',''),('ftps-access.conf','-|ALL|ALL\n')]:
     file=pathlib.Path('/etc/cgpanel')/name
