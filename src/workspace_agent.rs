@@ -306,7 +306,26 @@ fn ide_domain(reg: &Registry, op: &Operation) -> Option<String> {
 }
 pub async fn ide_status(reg: &Registry, op: &Operation) -> Result<Value> {
     let item = owned(reg, op, "apps")?;
-    let url = if let Some(domain) = ide_domain(reg, op) {
+    // Operator-managed routes allow CDNs that only forward standard HTTPS.
+    // This file is outside tenant workspaces; never accept a tenant-supplied URL.
+    let routes = match tokio::fs::read_to_string("/etc/cgpanel/ide-public-urls.json").await {
+        Ok(text) => serde_json::from_str::<std::collections::BTreeMap<String, String>>(&text)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Default::default(),
+        Err(e) => return Err(e.into()),
+    };
+    let url = if let Some(url) = routes.get(&op.id) {
+        let parsed = reqwest::Url::parse(url)?;
+        ensure!(
+            parsed.scheme() == "https"
+                && parsed.host_str().is_some()
+                && parsed.username().is_empty()
+                && parsed.password().is_none()
+                && parsed.query().is_none()
+                && parsed.fragment().is_none(),
+            "Invalid public IDE URL"
+        );
+        parsed.to_string()
+    } else if let Some(domain) = ide_domain(reg, op) {
         format!("https://{domain}:8443/")
     } else {
         format!(
@@ -316,7 +335,7 @@ pub async fn ide_status(reg: &Registry, op: &Operation) -> Result<Value> {
         )
     };
     Ok(
-        json!({"installed":item.data["ide_installed"]==true,"enabled":item.data["ide_enabled"]==true,"url":url,"memory_mb":384,"tools":["Git source control","Integrated terminal","Open VSX extensions"],"routing":"Assigned domain on CDN-compatible HTTPS port 8443, isolated from the panel origin"}),
+        json!({"installed":item.data["ide_installed"]==true,"enabled":item.data["ide_enabled"]==true,"url":url,"memory_mb":384,"tools":["Git source control","Integrated terminal","Open VSX extensions"],"routing":"Dedicated HTTPS IDE origin; CDN routes can be configured by the server administrator"}),
     )
 }
 pub async fn render_ide(reg: &Registry, op: &Operation) -> Result<()> {
