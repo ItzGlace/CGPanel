@@ -1,0 +1,19 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: CGPanel
+Label: CGPanel stable
+Suite: stable
+Architectures: amd64
+Description: CGPanel for Ubuntu 24.04 amd64
+Date: Fri, 20 Nov 2026 18:08:26 GMT
+SHA256:
+ 4d29f79dded0afb5173b78f02b66383e93bd414236d640291cc5bf20edd8d6b7 1098 Packages
+ 5e5ebdc8d4c6688ceafbecc1e3847ccf9fcccf63194782d265863f151285a9d7 682 Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQShz+J5aokks9AlYrqBuoPMELEuLwUCawCMmgAKCRCBuoPMELEu
+L407AP91FZxvCUisiw42KHCNe0hFhoDYpxIKwuxRjwR8eVIxbQD/euBszHnh+meF
+AH8yHyspc4b52IFV6YUF2y6Ymkld9wY=
+=g67d
+-----END PGP SIGNATURE-----
