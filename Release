@@ -3,7 +3,7 @@ Label: CGPanel stable
 Suite: stable
 Architectures: amd64
 Description: CGPanel for Ubuntu 24.04 amd64
-Date: Fri, 20 Nov 2026 19:55:41 GMT
+Date: Fri, 20 Nov 2026 21:31:12 GMT
 SHA256:
- 6aeba797c326bde6cd5165a44068b6dab0960e9c0087ab87f02deb341e0c331b 1098 Packages
- 6bb3d25c45d9ed1d5f0ae46e2e0ab805e195ea4a938a13cdc677b44ab6e50015 680 Packages.gz
+ 7ab9c4521bc145528d21cd83ebaffd4c10ecfd9f4239d859393c3bd15faa6520 1098 Packages
+ a66ca52d2eb8ac1e2efe987415e8d32a1b353eef9b820760f38c64bc4c23679f 683 Packages.gz
