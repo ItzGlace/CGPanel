@@ -1,17 +1,17 @@
 Package: cgpanel
-Version: 0.7.0
+Version: 0.7.1
 Architecture: amd64
 Maintainer: CGPanel maintainers <maintainers@cgpanel.invalid>
 Section: web
 Priority: optional
-Installed-Size: 30047
+Installed-Size: 60788
 Depends: ca-certificates, curl, gnupg, python3, python3-venv, python3-pymysql, python3-psycopg2, python3-sqlparse, nginx, libnginx-mod-http-modsecurity, podman, uidmap, slirp4netns, fuse-overlayfs, dbus-user-session, mariadb-server, postgresql-16, bind9, bind9-utils, nftables, fail2ban, openssl, openssh-server, vsftpd, bubblewrap, e2fsprogs, util-linux, postfix, dovecot-core, dovecot-imapd, dovecot-lmtpd, rspamd, redis-server, rclone, iptables, libssl3t64, libc6 (>= 2.39)
 Homepage: https://github.com/ItzGlace/CGPanel
 Description: CGPanel isolated application hosting panel
  Hosting panel, privileged provisioning broker and database workspace.
  Fresh hosts require cgpanel-setup with a public IP and dedicated-host flag.
  Existing installations are upgraded with snapshot and health-check recovery.
-Filename: ./cgpanel_0.7.0_amd64.deb
-Size: 10201372
-SHA256: c023943ce0eb67db04363ab485ed33f18bb3ae7b33c1139b27681f15fb014caa
+Filename: ./cgpanel_0.7.1_amd64.deb
+Size: 41491784
+SHA256: 4b6b0f873d906736d09b76cdbeabb095d9bb00057721db114b99dbe4f0acabd7
 

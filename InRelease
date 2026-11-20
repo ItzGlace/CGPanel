@@ -6,14 +6,14 @@ Label: CGPanel stable
 Suite: stable
 Architectures: amd64
 Description: CGPanel for Ubuntu 24.04 amd64
-Date: Fri, 20 Nov 2026 18:08:26 GMT
+Date: Fri, 20 Nov 2026 19:55:41 GMT
 SHA256:
- 4d29f79dded0afb5173b78f02b66383e93bd414236d640291cc5bf20edd8d6b7 1098 Packages
- 5e5ebdc8d4c6688ceafbecc1e3847ccf9fcccf63194782d265863f151285a9d7 682 Packages.gz
+ 6aeba797c326bde6cd5165a44068b6dab0960e9c0087ab87f02deb341e0c331b 1098 Packages
+ 6bb3d25c45d9ed1d5f0ae46e2e0ab805e195ea4a938a13cdc677b44ab6e50015 680 Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQShz+J5aokks9AlYrqBuoPMELEuLwUCawCMmgAKCRCBuoPMELEu
-L407AP91FZxvCUisiw42KHCNe0hFhoDYpxIKwuxRjwR8eVIxbQD/euBszHnh+meF
-AH8yHyspc4b52IFV6YUF2y6Ymkld9wY=
-=g67d
+iHUEARYKAB0WIQShz+J5aokks9AlYrqBuoPMELEuLwUCawClvQAKCRCBuoPMELEu
+L9wtAP9o4GtBflQ6aURURv2+DUSTAv4RRX/DmzMMrcT4CpSuCAD/QG7ToJZzsx/o
+YbJQBvSj6QNaarcpEr7hwC5AI9wCEA8=
+=Z0ww
 -----END PGP SIGNATURE-----
