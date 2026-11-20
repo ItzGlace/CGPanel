@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.3
+
+- Roll back when an installer receives SIGINT, SIGTERM or SIGHUP after stopping services. Finish dependency preparation before honoring an earlier cancellation.
+- Stage replacement binaries and complete atomic binary backups while the existing panel is online; activate them with renames after services stop.
+- Check per-filesystem staging, snapshot and recovery space plus 1 GiB safety headroom before stopping services. Recover from a failed snapshot without restoring incomplete or unchanged data.
+- Stop configuration child processes before restoration, prevent overlapping installers, and keep recovery logging working after an SSH/output pipe disconnects.
+- Mark a failed install as failed even if its old updater wrapper has exited, instead of leaving a stale installing status.
+- Preserve the exact HTTP/version or agent-readiness error and recent service journals before rollback. Bypass external proxies for local health checks and log agent startup stages.
+- Add real HTTP/Unix-socket, process-group cancellation, interrupted-update and post-start health-failure regressions.
+
 ## 0.6.2
 
 - Wait for APT index/dpkg locks during dependency preparation, before stopping the panel. Retry lock races within a bounded preparation window; preserve repository/signature errors.

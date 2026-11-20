@@ -1434,13 +1434,20 @@ async fn main() -> Result<()> {
         Err(e) => return Err(e.into()),
     };
     // Reapply persisted database filters and block lists after firewall/service restart.
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        "Agent restoring database access"
+    );
     db_access(&registry).await?;
+    tracing::info!("Agent restoring firewall block lists");
     block_access(&registry).await?;
     if registry.items.values().any(|i| i.kind == "domains") {
+        tracing::info!("Agent refreshing DNS zones");
         dns_sync(&registry).await?;
     }
     // Refresh generated vhosts during upgrades so existing domains gain ACME and telemetry routes.
     for (id, item) in registry.items.iter().filter(|(_, i)| i.kind == "domains") {
+        tracing::info!(domain_id = %id, "Agent refreshing domain routing");
         tls_agent::render_domain(&registry, id, item).await?;
     }
     for (id, item) in registry
@@ -1448,6 +1455,7 @@ async fn main() -> Result<()> {
         .iter()
         .filter(|(_, i)| i.kind == "apps" && i.data["ide_enabled"] == true)
     {
+        tracing::info!(app_id = %id, "Agent refreshing IDE routing");
         workspace_agent::render_ide(
             &registry,
             &Operation {
@@ -1459,8 +1467,10 @@ async fn main() -> Result<()> {
         )
         .await?;
     }
+    tracing::info!("Agent restoring IDE firewall and transfer policy");
     workspace_agent::firewall(&registry).await?;
     services_agent::refresh(&registry).await?;
+    tracing::info!("Agent restoring mail configuration");
     mail_agent::refresh(&registry).await?;
     let reg = Arc::new(Mutex::new(registry));
     cron_agent::start(reg.clone());
@@ -1472,6 +1482,7 @@ async fn main() -> Result<()> {
     run("chown", &["root:cgpanel", &socket]).await?;
     tokio::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o660)).await?;
     let panel_uid: u32 = run("id", &["-u", "cgpanel"]).await?.trim().parse()?;
+    tracing::info!(%socket, version = env!("CARGO_PKG_VERSION"), "Agent ready");
     loop {
         let (stream, _) = listener.accept().await?;
         let peer = stream.peer_cred()?;

@@ -25,7 +25,7 @@ jobs:
       - run: CGPANEL_DNS_FIXTURE_OUT=/tmp/cgpanel-generated.zone cargo test --locked
       - run: cargo build --locked --bin cgpanel-workspace && python3 tests/workspace.py
       - run: cargo build --locked --bin cgpanel && python3 tests/admin_api.py
-      - run: python3 tests/package_manager.py && python3 tests/updater_errors.py
+      - run: python3 tests/package_manager.py && python3 tests/updater_errors.py && python3 tests/installer.py
       - run: python3 tests/release_features.py && python3 tests/monitor_alerts.py
       - run: npx playwright install --with-deps chromium
       - run: python3 tests/browser_features.py
@@ -46,9 +46,15 @@ jobs:
         run: |
           set -e
           version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
-          for scenario in success prepare-failure setup-failure; do
+          mkdir -p "$GITHUB_WORKSPACE/target/upgrade-package/release"
+          for cg_upgrade_binary in cgpanel cgpanel-agent cgpanel-workspace cgpanel-egress cgpanel-acme-hook; do
+            ln -s "$GITHUB_WORKSPACE/target/debug/$cg_upgrade_binary" "$GITHUB_WORKSPACE/target/upgrade-package/release/$cg_upgrade_binary"
+          done
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/upgrade-package" python3 scripts/package_release.py "$GITHUB_WORKSPACE/target/upgrade-package/bundle"
+          for scenario in success prepare-failure setup-failure snapshot-failure space-failure health-failure interrupted cancel-preflight; do
             docker run --rm --network none -v "$GITHUB_WORKSPACE:/project:ro" -v "$GITHUB_WORKSPACE/target:/candidate:ro" \
               -e CGPANEL_DISPOSABLE_TEST=1 -e CGPANEL_UPGRADE_LEGACY_BINARY=/candidate/upgrade-baseline-cgpanel \
               -e CGPANEL_UPGRADE_NEW_BIN_DIR=/candidate/debug -e "CGPANEL_UPGRADE_NEW_VERSION=$version" \
+              -e "CGPANEL_UPGRADE_BUNDLE=/candidate/upgrade-package/bundle/CGPanel-v$version-linux-x86_64.tar.gz" \
               cgpanel-upgrade-test python3 tests/upgrade.py "$scenario"
           done

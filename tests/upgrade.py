@@ -4,10 +4,10 @@ Only run in the dedicated test image. systemd and nftables use fixture adapters;
 APT command responses use a fixture, but lock contention is a real POSIX lock.
 """
 from contextlib import closing
-import fcntl,hashlib,http.server,json,os,pathlib,secrets,shutil,socket,sqlite3,subprocess,sys,tarfile,threading,time,urllib.request
+import fcntl,hashlib,http.server,json,os,pathlib,secrets,shutil,signal,socket,sqlite3,subprocess,sys,tarfile,threading,time,urllib.request
 assert os.environ.get('CGPANEL_DISPOSABLE_TEST')=='1','Disposable upgrade container required'
 SOURCE=pathlib.Path(__file__).resolve().parents[1];ROOT=pathlib.Path('/tmp/cgpanel-upgrade-fixture');ROOT.mkdir()
-scenario=sys.argv[1] if len(sys.argv)>1 else 'success';assert scenario in ('success','prepare-failure','setup-failure')
+scenario=sys.argv[1] if len(sys.argv)>1 else 'success';assert scenario in ('success','prepare-failure','setup-failure','snapshot-failure','space-failure','health-failure','interrupted','cancel-preflight')
 legacy=pathlib.Path(os.environ['CGPANEL_UPGRADE_LEGACY_BINARY']);new=pathlib.Path(os.environ['CGPANEL_UPGRADE_NEW_BIN_DIR']);version=os.environ['CGPANEL_UPGRADE_NEW_VERSION']
 def run(*args,**kw):
  result=subprocess.run(args,text=True,capture_output=True,timeout=100,**kw)
@@ -28,6 +28,7 @@ for name in ['cgpanel-agent','cgpanel-workspace','cgpanel-egress','cgpanel-acme-
 old_hashes={name:hashlib.sha256((pathlib.Path('/usr/local/bin')/name).read_bytes()).hexdigest() for name in ['cgpanel','cgpanel-agent','cgpanel-workspace','cgpanel-egress','cgpanel-acme-hook']}
 password=secrets.token_urlsafe(24);run('/usr/local/bin/cgpanel','bootstrap',env={**os.environ,'CGPANEL_DB':'/var/lib/cgpanel/panel.db','CGPANEL_ADMIN_PASSWORD':password})
 with closing(sqlite3.connect('/var/lib/cgpanel/panel.db')) as db, db:db.execute('CREATE TABLE fixture_sentinel(value TEXT)');db.execute("INSERT INTO fixture_sentinel VALUES('preserve-tenant-data')")
+with closing(sqlite3.connect('/var/lib/cgpanel/panel.db')) as db:original_tables={row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 for entry in pathlib.Path('/var/lib/cgpanel').iterdir():shutil.chown(entry,user='cgpanel',group='cgpanel')
 shutil.chown('/var/lib/cgpanel',user='cgpanel',group='cgpanel');pathlib.Path('/var/lib/cgpanel').chmod(0o750)
 # An independent web workload remains online through the panel update.
@@ -46,7 +47,9 @@ def broker():
  while True:
   try:connection,_=agent.accept()
   except OSError:return
-  with connection:connection.recv(8192);connection.sendall(b'{"ok":false,"error":"fixture broker"}\n')
+  with connection:
+   connection.recv(8192)
+   if scenario!='health-failure':connection.sendall(b'{"ok":false,"error":"fixture broker"}\n')
 threading.Thread(target=broker,daemon=True).start()
 run('systemctl','start','cgpanel-agent','cgpanel')
 def health():
@@ -73,8 +76,17 @@ payload=ROOT/'payload';payload.mkdir()
 with tarfile.open(bundle_path) as bundle:bundle.extractall(payload,filter='data')
 assert json.loads((payload/'manifest.json').read_text())['version']==version
 assert (payload/'deploy/package_manager.py').exists()
+if scenario in ('space-failure','snapshot-failure'):
+ installer=payload/'deploy/apply-release.py'
+ if scenario=='space-failure':
+  fixture="import shutil,types\nshutil.disk_usage=lambda path: types.SimpleNamespace(free=0)\n"
+ else:
+  fixture="import tarfile,pathlib\n_fixture_tar_open=tarfile.open\ndef _fixture_open(name,mode='r',*args,**kw):\n if mode=='w':\n  pathlib.Path(name).write_bytes(b'partial snapshot');raise OSError(28,'FIXTURE_SNAPSHOT_NO_SPACE')\n return _fixture_tar_open(name,mode,*args,**kw)\ntarfile.open=_fixture_open\n"
+ installer.write_text(fixture+installer.read_text())
 if scenario=='setup-failure':
  with (payload/'deploy/setup-v0.4.py').open('a') as file:file.write("\nraise RuntimeError('FIXTURE_CONFIGURATION_FAILURE')\n")
+if scenario=='interrupted':
+ with (payload/'deploy/setup-v0.4.py').open('a') as file:file.write("\nimport os,time\nfrom pathlib import Path\nPath('/tmp/cgpanel-upgrade-fixture/configuring.pid').write_text(str(os.getpid()))\ntime.sleep(60)\n")
 # Native APT uses POSIX record locks. Hold the real index lock while the
 # preparation step starts, and verify it cannot stop the old panel meanwhile.
 lock=pathlib.Path('/var/lib/apt/lists/lock');lock.parent.mkdir(parents=True,exist_ok=True)
@@ -93,12 +105,28 @@ def keepalive():
 threading.Thread(target=keepalive,daemon=True).start();log=(ROOT/'apply.log').open('w')
 # Match the legacy updater, whose context manager left its read connection open
 # until the installer subprocess returned. Atomic rollback must tolerate this.
+(pathlib.Path('/var/lib/cgpanel-updates')/'status.json').write_text(json.dumps({'state':'installing','available':'v'+version,'installed':'0.5.2'}))
 legacy_check=sqlite3.connect('/var/lib/cgpanel/panel.db')
 with legacy_check:legacy_check.execute("SELECT count(*) FROM jobs WHERE status='running'").fetchone()
 process=subprocess.Popen(['python3',str(payload/'deploy/apply-release.py'),str(payload)],stdout=log,stderr=log)
 try:
- time.sleep(.7);assert process.poll() is None,'Installer did not wait for APT';assert health()=='0.5.2';assert not (ROOT/'apt.log').exists();assert not list(pathlib.Path('/var/backups').glob('cgpanel-*'))
- held.terminate();held.wait();held.stdout.close();code=process.wait(timeout=100);legacy_check.close()
+ time.sleep(.7)
+ if scenario=='space-failure':assert process.poll() is not None,'Low-space preflight did not refuse the update'
+ else:assert process.poll() is None,'Installer did not wait for APT'
+ assert health()=='0.5.2';assert not (ROOT/'apt.log').exists();assert not list(pathlib.Path('/var/backups').glob('cgpanel-*'))
+ if scenario=='cancel-preflight':process.send_signal(signal.SIGTERM)
+ held.terminate();held.wait();held.stdout.close()
+ if scenario=='interrupted':
+  for _ in range(1000):
+   if (ROOT/'configuring.pid').exists():break
+   if process.poll() is not None:raise AssertionError('Installer exited before interruption fixture')
+   time.sleep(.05)
+  else:raise AssertionError('Installer did not reach configuration fixture')
+  competing=subprocess.run(['python3',str(payload/'deploy/apply-release.py'),str(payload)],capture_output=True,text=True,timeout=5)
+  assert competing.returncode!=0 and 'Another release installer is still running' in competing.stderr
+  assert process.poll() is None,'Competing installer interrupted the active installation'
+  process.send_signal(signal.SIGINT)
+ code=process.wait(timeout=100);legacy_check.close()
  for _ in range(100):
   try:
    current=health()
@@ -115,10 +143,17 @@ try:
   assert (pathlib.Path('/usr/local/lib/cgpanel')/'updater.py').exists()
  else:
   assert code!=0;assert pathlib.Path('/etc/cgpanel/version').read_text().strip()=='0.5.2'
+  assert json.loads(pathlib.Path('/var/lib/cgpanel-updates/status.json').read_text())['state']=='failed','Failed installer left a stale installing state'
+  with closing(sqlite3.connect('/var/lib/cgpanel/panel.db')) as db:assert {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'") }==original_tables,'Rollback did not restore the original database schema'
   assert {name:hashlib.sha256((pathlib.Path('/usr/local/bin')/name).read_bytes()).hexdigest() for name in old_hashes}==old_hashes
-  assert ('FIXTURE_REPOSITORY_NOT_SIGNED' if scenario=='prepare-failure' else 'FIXTURE_CONFIGURATION_FAILURE') in transcript.read_text()
-  if scenario=='prepare-failure':assert not list(pathlib.Path('/var/backups').glob('cgpanel-*'))
- print('PASS:',scenario,'legacy panel waits safely for APT; website remains reachable; panel data preserved; expected install/rollback result verified')
+  assert ('Not enough free disk space' if scenario=='space-failure' else 'FIXTURE_SNAPSHOT_NO_SPACE' if scenario=='snapshot-failure' else 'FIXTURE_REPOSITORY_NOT_SIGNED' if scenario=='prepare-failure' else 'empty reply' if scenario=='health-failure' else 'SIGINT' if scenario=='interrupted' else 'SIGTERM' if scenario=='cancel-preflight' else 'FIXTURE_CONFIGURATION_FAILURE') in transcript.read_text()
+  if scenario in ('prepare-failure','cancel-preflight','space-failure'):assert not list(pathlib.Path('/var/backups').glob('cgpanel-*'))
+  if scenario=='snapshot-failure':assert not list(pathlib.Path('/var/backups').glob('cgpanel-*/host-config.tar')),'Partial snapshot was retained'
+  if scenario=='interrupted':
+   pid=(ROOT/'configuring.pid').read_text();status=pathlib.Path('/proc')/pid/'stat'
+   assert not status.exists() or status.read_text().split()[2]=='Z','Configuration child survived rollback'
+ print('PASS:',scenario,'expected installation/recovery verified; panel data preserved; website remains reachable')
+ assert not list(pathlib.Path('/usr/local/bin').glob('*.release-new')),'Staged binaries leaked after completion'
 finally:
  done.set();legacy_check.close()
  if held.poll() is None:held.terminate();held.wait();held.stdout.close()
