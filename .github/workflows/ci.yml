@@ -37,3 +37,5 @@ jobs:
       - run: docker run --rm -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-integration sh -c 'mkdir -p /run/mysqld && chown mysql:mysql /run/mysqld && python3 tests/host_tools.py'
       - run: docker run --rm -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-integration python3 tests/cache.py
       - run: docker run --rm -v /tmp/cgpanel-generated.zone:/generated.zone:ro cgpanel-integration named-checkzone example.com /generated.zone
+      - run: docker build -t cgpanel-mail-test -f tests/mail-tools.Dockerfile tests
+      - run: docker run --rm --network none --add-host mail.cgpanel.test:127.0.0.1 -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-mail-test python3 tests/mail_protocols.py

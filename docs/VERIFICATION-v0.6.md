@@ -12,6 +12,7 @@ This is a release candidate, not a claim that every hosting-server workflow has 
 - New monitoring tests exercise actual monitor/job queues with a fixture broker: Telegram + email targeting and one-hour abuse-alert cooldown. They do not send messages to external recipients.
 - Playwright with headless Chromium: 10 views at 1440px and 390px widths (20 screenshots), analytics controls, domain hierarchy and editor find scrolling/wrapping/Ctrl+F. No browser exceptions. Broker-dependent screens use an isolated broker fixture.
 - Disposable Ubuntu 24.04 container: real MariaDB/PostgreSQL DDL and CRUD, rejection of multiple statements, other-database denial and host-file denial.
+- Real mail stack in a network-isolated container: trusted-test-certificate TLS on SMTP 587/465 and IMAP 993, valid/invalid credential checks, local LMTP delivery, authenticated DKIM signing, a 64 MiB quota, sender-spoof and unauthenticated-relay denial, and preservation of enabled mail listeners across setup. Systemd service-control calls are stubbed; protocol daemons and config validators run normally. The generated DKIM public record is checked with BIND.
 - BIND `named-checkzone` accepts the broker-generated parent/subdomain, MX, SPF, multi-string DKIM and DMARC fixture. A separate syntax fixture includes child ACME challenges.
 - Real Nginx public-page cache hits; cookie/Authorization bypasses; private/Set-Cookie responses excluded. Tests read the shipped cache directives.
 - Optimized Ubuntu 24.04 release binaries passed the administrator API, MCP/OAuth/login and workspace suites inside Ubuntu. The release bundle manifest, binary/helper membership and SHA-256 checksum were checked.
@@ -26,7 +27,7 @@ This is a release candidate, not a claim that every hosting-server workflow has 
 | Editor find | Keyboard controls, visible selection/scroll, wrap feedback; real browser test | None observed in exercised flows |
 | All-page hotspots/analytics | Shared-layout snippet, SPA paths, click labels, sampled movement and heatmap selector; collection/browser tests | Site owner must install snippet and manage consent; production site not accessed |
 | Protection/CAPTCHA layout | Shared form controls fixed; desktop/mobile screenshots inspected | Fixtures do not prove production deployment has rebuilt CSS |
-| Mail hosting/DNS | Preserve configured Postfix listener on upgrade; DKIM/DMARC TXT and grouped-zone fixes; BIND validation | Live SMTP/IMAP authentication, DKIM signing, external delivery, PTR and provider port checks |
+| Mail hosting/DNS | Preserve configured Postfix listener on upgrade; DKIM/DMARC TXT and grouped-zone fixes; BIND validation | External delivery, public certificate/PTR/provider-port checks and actual systemd deployment |
 | Database interface | Database Studio tables/schema/SQL/CSV; real MariaDB/PostgreSQL privilege tests | Full phpMyAdmin parity, full SQL export/import and advanced administration are not implemented |
 | Subdomains | Same-owner ancestor grouping, parent DNS zone and child record/ACME labels, account boundary checks | Migration on a real BIND server and existing customer zones |
 | Application resource changes | Merge partial limits, live CPU/RAM update, preserve stopped state, early shrink rejection | Actual rootless Podman/cgroup and volume-growth test on dedicated host |
