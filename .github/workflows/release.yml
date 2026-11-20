@@ -57,6 +57,7 @@ jobs:
       - name: Package and verify
         run: |
           python3 deploy/install-rclone.py --download-only target/downloads/rclone-v1.75.1-linux-amd64.zip
+          python3 deploy/install-certbot.py --download-only target/downloads/certbot-5.10.0-cp312-amd64.tar.gz
           python3 scripts/package_release.py dist
           python3 scripts/package_deb.py dist
           cd dist

@@ -26,7 +26,7 @@ jobs:
       - run: CGPANEL_DNS_FIXTURE_OUT=/tmp/cgpanel-generated.zone cargo test --locked
       - run: cargo build --locked --bin cgpanel-workspace && python3 tests/workspace.py
       - run: cargo build --locked --bin cgpanel && python3 tests/admin_api.py
-      - run: python3 tests/rclone_installer.py && python3 tests/package_manager.py && python3 tests/updater_errors.py && python3 tests/installer.py
+      - run: python3 tests/certbot_installer.py && python3 tests/rclone_installer.py && python3 tests/package_manager.py && python3 tests/updater_errors.py && python3 tests/installer.py
       - run: python3 tests/release_features.py && python3 tests/monitor_alerts.py
       - run: npx playwright install --with-deps chromium
       - run: python3 tests/browser_features.py
@@ -76,6 +76,7 @@ jobs:
           trap report_apt_failure ERR
           version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
           python3 deploy/install-rclone.py --download-only target/downloads/rclone-v1.75.1-linux-amd64.zip
+          python3 deploy/install-certbot.py --download-only target/downloads/certbot-5.10.0-cp312-amd64.tar.gz
           CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/upgrade-package" python3 scripts/package_deb.py "$GITHUB_WORKSPACE/target/upgrade-package/bundle"
           export GNUPGHOME="$RUNNER_TEMP/cgpanel-test-signing"
           install -d -m 0700 "$GNUPGHOME"

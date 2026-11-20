@@ -22,7 +22,7 @@ sudo apt install cgpanel
 sudo cgpanel-setup --dedicated-host --public-ip YOUR_SERVER_IPV4
 ```
 
-A package install on an existing configured CGPanel host runs the snapshot/health-check upgrade automatically. A fresh package install stages files; `cgpanel-setup` initializes hosting services. APT packages include a checksum-verified rclone archive, so installing that tool requires no separate upstream download. Source installs can use the verified CGPanel mirror or official GitHub/rclone download sources. Fresh setup still downloads the compatible Certbot environment and application egress image and needs outbound network access.
+A package install on an existing configured CGPanel host runs the snapshot/health-check upgrade automatically. A fresh package install stages files; `cgpanel-setup` initializes hosting services. APT packages include checksum-verified rclone and Certbot bundles. Certbot and its Cloudflare DNS plugin install from pinned wheels without contacting PyPI or resolving newer versions on the host. Setup validates native dependencies and the plugin before activating the new environment; the previous environment is retained. Repeating an interrupted setup reuses a verified installed environment. Source installs fetch these pinned bundles from the CGPanel mirror. Fresh setup still needs outbound network access for Ubuntu packages and the application egress image.
 
 For future updates:
 
@@ -34,6 +34,10 @@ sudo apt install --only-upgrade cgpanel
 `apt update` refreshes repository metadata; it does not accept a package name. `apt upgrade cgpanel` or `apt install --only-upgrade cgpanel` upgrades the package. The panel's Updates page and automatic update timer use this APT channel on package-managed installations. Existing source/bundle installations keep the GitHub release channel until migrated by APT. Running background jobs or insufficient disk can defer/reject an update while retaining the previous installation.
 
 `apt remove cgpanel` stops panel services and removes packaged files. Hosted applications, databases, mail and host configuration are retained even on package purge. Use the explicit account-deletion interface when project data should be removed.
+
+If fresh setup stopped while downloading rclone or resolving Certbot packages, upgrade CGPanel through APT and rerun the same `cgpanel-setup` command. The bundled dependencies need no pip timeout overrides. Do not delete the panel database or generate another administrator when recovering an existing configured panel.
+
+The Certbot package versions, wheel names and SHA-256 pins are recorded in `deploy/certbot-wheels.json`. Maintainers can reproduce its archive from those wheels with `python3 scripts/build_certbot_bundle.py WHEEL_DIRECTORY OUTPUT_ARCHIVE`; the script rejects different wheel or archive hashes.
 
 ## Maintaining the signed repository
 

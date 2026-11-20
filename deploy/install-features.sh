@@ -8,8 +8,7 @@ apt-get update
 apt-get install -y rclone python3-venv
 python3 "$CG_SOURCE/deploy/install-rclone.py"
 install -d -m 0755 /opt/cgpanel-tools /usr/local/lib/cgpanel /srv/cgpanel/acme
-python3 -m venv /opt/cgpanel-tools/certbot
-/opt/cgpanel-tools/certbot/bin/pip install --upgrade 'certbot>=5.4,<6' 'certbot-dns-cloudflare>=5.4,<6'
+python3 "$CG_SOURCE/deploy/install-certbot.py"
 install -m 0755 "$CG_SOURCE/target/release/cgpanel-acme-hook" /usr/local/bin/
 install -m 0755 "$CG_SOURCE/deploy/reload-nginx" /usr/local/lib/cgpanel/
 install -m 0644 "$CG_SOURCE/deploy/cloudflare-realip.conf" /etc/cgpanel/

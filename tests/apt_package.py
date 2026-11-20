@@ -2,7 +2,7 @@
 """Native APT/dpkg install/removal and signed metadata/hash rejection; disposable container only."""
 import json,os,pathlib,shutil,subprocess,tempfile
 assert os.environ.get('CGPANEL_DISPOSABLE_TEST')=='1'
-repository=pathlib.Path(os.environ['CGPANEL_APT_TEST_REPOSITORY']);package=next(repository.glob('cgpanel_*_amd64.deb'));version=subprocess.check_output(['dpkg-deb','-f',str(package),'Version'],text=True).strip()
+repository=pathlib.Path(os.environ['CGPANEL_APT_TEST_REPOSITORY']);filename=next(line.removeprefix('Filename: ./') for line in (repository/'Packages').read_text().splitlines() if line.startswith('Filename: ./'));package=repository/filename;version=subprocess.check_output(['dpkg-deb','-f',str(package),'Version'],text=True).strip()
 def run(*args,ok=True,**kwargs):
  result=subprocess.run(args,text=True,capture_output=True,timeout=100,**kwargs)
  assert (result.returncode==0)==ok,(args,result.stdout[-2500:],result.stderr[-2500:]);return result
@@ -19,6 +19,20 @@ with tempfile.TemporaryDirectory(prefix='cgp-apt-') as temp:
  assert (payload/'tools/rclone-v1.75.1-linux-amd64.zip').is_file()
  run('python3',str(payload/'deploy/install-rclone.py'))
  assert 'rclone v1.75.1' in run('/usr/local/lib/cgpanel/rclone','version').stdout
+ certbot=json.loads((payload/'deploy/certbot-wheels.json').read_text())
+ assert (payload/'tools'/certbot['archive']).is_file()
+ old_certbot=pathlib.Path('/opt/cgpanel-tools/certbot');old_certbot.mkdir(parents=True);(old_certbot/'existing-sentinel').write_text('retain previous installation')
+ pathlib.Path('/etc/pip.conf').write_text('[install]\ntarget = /invalid-global-pip-target\nindex-url = http://127.0.0.1:9\n')
+ env={**os.environ,'PIP_INDEX_URL':'http://127.0.0.1:9','PIP_EXTRA_INDEX_URL':'http://127.0.0.1:9','PIP_CONSTRAINT':'/nonexistent-user-constraints','PIP_TARGET':'/invalid-target'}
+ run('python3',str(payload/'deploy/install-certbot.py'),env=env)
+ assert old_certbot.is_symlink()
+ assert not pathlib.Path('/invalid-global-pip-target').exists(),'Host pip configuration redirected installation'
+ installed=old_certbot.resolve()
+ assert run(str(old_certbot/'bin/certbot'),'--version').stdout.strip()=='certbot '+certbot['version']
+ assert 'dns-cloudflare' in run(str(old_certbot/'bin/certbot'),'plugins','--text').stdout
+ assert next(pathlib.Path('/opt/cgpanel-tools').glob('*.previous/existing-sentinel')).read_text()=='retain previous installation'
+ run('python3',str(payload/'deploy/install-certbot.py'),env=env)
+ assert old_certbot.resolve()==installed,'Repeated setup created another environment'
 
  assert pathlib.Path('/etc/cgpanel/package-channel').read_text().strip()=='apt'
  run('cgpanel-setup',ok=False);run('cgpanel-setup','--dedicated-host','--public-ip','invalid',ok=False)
@@ -31,4 +45,4 @@ with tempfile.TemporaryDirectory(prefix='cgp-apt-') as temp:
  bad=run('apt-get',*options,'update',ok=False);assert 'signature' in (bad.stderr+bad.stdout).lower()
  sentinel=pathlib.Path('/srv/cgpanel/tenants/kept/site.txt');sentinel.parent.mkdir(parents=True);sentinel.write_text('customer data')
  run('apt-get','remove','-y','cgpanel');assert sentinel.read_text()=='customer data' and not payload.exists()
- print('PASS: signed APT discovery, native package installation, Ubuntu library compatibility, setup argument validation, signature/hash tamper rejection and removal preserving customer data')
+ print('PASS: signed APT discovery, native package installation, offline Certbot/Cloudflare/rclone, safe repeat setup, Ubuntu library compatibility, signature/hash tamper rejection and removal preserving customer data')
