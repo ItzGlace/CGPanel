@@ -22,7 +22,7 @@ sudo apt install cgpanel
 sudo cgpanel-setup --dedicated-host --public-ip YOUR_SERVER_IPV4
 ```
 
-A package install on an existing configured CGPanel host runs the snapshot/health-check upgrade automatically. A fresh package install stages files; `cgpanel-setup` initializes hosting services. Fresh setup also downloads the pinned rclone tool, current compatible Certbot environment and application egress image, and therefore needs outbound network access.
+A package install on an existing configured CGPanel host runs the snapshot/health-check upgrade automatically. A fresh package install stages files; `cgpanel-setup` initializes hosting services. APT packages include a checksum-verified rclone archive, so installing that tool requires no separate upstream download. Source installs can use the verified CGPanel mirror or official GitHub/rclone download sources. Fresh setup still downloads the compatible Certbot environment and application egress image and needs outbound network access.
 
 For future updates:
 

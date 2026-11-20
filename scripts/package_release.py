@@ -8,7 +8,11 @@ output=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else root/'dist');output.mkdi
 with tempfile.TemporaryDirectory() as temp:
     stage=pathlib.Path(temp);(stage/'bin').mkdir();(stage/'deploy').mkdir()
     for name in ('cgpanel','cgpanel-agent','cgpanel-workspace','cgpanel-egress','cgpanel-acme-hook'):shutil.copy2(target/name,stage/'bin'/name)
-    for name in ('apt-updater.py','account-purge.py','package_manager.py','database-query.py','updater.py','apply-release.py','setup-v0.4.py','setup-v0.5.py','workspace-volume.py','harden-sftp.py','setup-mail.py','mail-config.py','adopt-sftp.py','reload-nginx'):shutil.copy2(root/'deploy'/name,stage/'deploy'/name)
+    for name in ('install-rclone.py','apt-updater.py','account-purge.py','package_manager.py','database-query.py','updater.py','apply-release.py','setup-v0.4.py','setup-v0.5.py','workspace-volume.py','harden-sftp.py','setup-mail.py','mail-config.py','adopt-sftp.py','reload-nginx'):shutil.copy2(root/'deploy'/name,stage/'deploy'/name)
+    rclone_archive=root/'target/downloads/rclone-v1.75.1-linux-amd64.zip'
+    if rclone_archive.is_file():
+        assert hashlib.sha256(rclone_archive.read_bytes()).hexdigest()=='982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab','Pinned rclone archive checksum mismatch'
+        (stage/'tools').mkdir();shutil.copy2(rclone_archive,stage/'tools'/rclone_archive.name)
     shutil.copytree(root/'deploy/php-runtime',stage/'deploy/php-runtime')
     shutil.copytree(root/'deploy/waf',stage/'deploy/waf')
     (stage/'manifest.json').write_text(json.dumps({'version':version,'platform':'ubuntu-24.04-x86_64'}))

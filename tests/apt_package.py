@@ -16,6 +16,10 @@ with tempfile.TemporaryDirectory(prefix='cgp-apt-') as temp:
  assert run('dpkg-query','-W','-f=${Status} ${Version}','cgpanel').stdout=='install ok installed '+version
  payload=pathlib.Path('/usr/share/cgpanel/payload');assert (payload/'target/release/cgpanel').resolve()==payload/'bin/cgpanel'
  for binary in (payload/'bin').iterdir():assert 'not found' not in run('ldd',str(binary)).stdout
+ assert (payload/'tools/rclone-v1.75.1-linux-amd64.zip').is_file()
+ run('python3',str(payload/'deploy/install-rclone.py'))
+ assert 'rclone v1.75.1' in run('/usr/local/lib/cgpanel/rclone','version').stdout
+
  assert pathlib.Path('/etc/cgpanel/package-channel').read_text().strip()=='apt'
  run('cgpanel-setup',ok=False);run('cgpanel-setup','--dedicated-host','--public-ip','invalid',ok=False)
  assert not pathlib.Path('/etc/cgpanel/agent.env').exists(),'Invalid setup arguments changed host configuration'

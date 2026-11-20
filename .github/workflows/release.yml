@@ -56,6 +56,7 @@ jobs:
           python3 tests/workspace.py
       - name: Package and verify
         run: |
+          python3 deploy/install-rclone.py --download-only target/downloads/rclone-v1.75.1-linux-amd64.zip
           python3 scripts/package_release.py dist
           python3 scripts/package_deb.py dist
           cd dist

@@ -4,12 +4,16 @@ import json,os,pathlib,shutil,subprocess,sys,tempfile,tomllib
 root=pathlib.Path(__file__).resolve().parents[1];version=tomllib.loads((root/'Cargo.toml').read_text())['package']['version']
 target=pathlib.Path(os.environ.get('CARGO_TARGET_DIR',root/'target'))/'release'
 output=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else root/'dist').resolve();output.mkdir(parents=True,exist_ok=True)
+rclone_archive=root/'target/downloads/rclone-v1.75.1-linux-amd64.zip'
+if not rclone_archive.is_file():raise SystemExit('Prepare the pinned rclone archive first: python3 deploy/install-rclone.py --download-only target/downloads/rclone-v1.75.1-linux-amd64.zip')
+if __import__('hashlib').sha256(rclone_archive.read_bytes()).hexdigest()!='982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab':raise SystemExit('Pinned rclone archive checksum mismatch')
 deps=['ca-certificates','curl','gnupg','python3','python3-venv','python3-pymysql','python3-psycopg2','python3-sqlparse','nginx','libnginx-mod-http-modsecurity','podman','uidmap','slirp4netns','fuse-overlayfs','dbus-user-session','mariadb-server','postgresql-16','bind9','bind9-utils','nftables','fail2ban','openssl','openssh-server','vsftpd','bubblewrap','e2fsprogs','util-linux','postfix','dovecot-core','dovecot-imapd','dovecot-lmtpd','rspamd','redis-server','rclone','iptables','libssl3t64','libc6 (>= 2.39)']
 with tempfile.TemporaryDirectory(prefix='cgp-deb-') as temp:
  stage=pathlib.Path(temp);payload=stage/'usr/share/cgpanel/payload';payload.mkdir(parents=True);(payload/'bin').mkdir()
  for name in ['cgpanel','cgpanel-agent','cgpanel-workspace','cgpanel-egress','cgpanel-acme-hook']:
   shutil.copy2(target/name,payload/'bin'/name)
   subprocess.run(['strip','--strip-debug',str(payload/'bin'/name)],check=True)
+ (payload/'tools').mkdir();shutil.copy2(rclone_archive,payload/'tools'/rclone_archive.name)
  shutil.copytree(root/'deploy',payload/'deploy',ignore=shutil.ignore_patterns('__pycache__','*.pyc','debian'))
  shutil.copy2(root/'Cargo.toml',payload/'Cargo.toml');(payload/'manifest.json').write_text(json.dumps({'version':version,'platform':'ubuntu-24.04-x86_64'}))
  (payload/'target').mkdir();(payload/'target/release').symlink_to('../bin')
