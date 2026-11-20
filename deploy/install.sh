@@ -138,7 +138,11 @@ if [[ ! -f /var/lib/cgpanel/panel.db ]]; then
  unset CGPANEL_ADMIN_PASSWORD
 fi
 python3 deploy/setup-v0.4.py "$CG_SOURCE"
-printf '0.5.2\n' > /etc/cgpanel/version
+python3 - "$CG_SOURCE/Cargo.toml" > /etc/cgpanel/version <<'PY_VERSION'
+import sys, tomllib
+with open(sys.argv[1], 'rb') as source:
+    print(tomllib.load(source)['package']['version'])
+PY_VERSION
 systemctl restart cgpanel-agent cgpanel
 systemctl is-active --quiet cgpanel-agent cgpanel
 echo "CGPanel installed: https://${CGPANEL_PUBLIC_IP}:2083"

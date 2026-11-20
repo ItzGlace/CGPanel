@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+- Read the fresh installation version from Cargo.toml so updater metadata matches the binaries.
+- Publish checked, installable Ubuntu packages automatically from version tags.
+
+
 ## 0.6.0 — release candidate
 
 - Account-scoped MCP tools with hashed, expiring credentials and OAuth S256 PKCE consent.

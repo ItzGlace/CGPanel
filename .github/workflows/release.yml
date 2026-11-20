@@ -64,6 +64,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          # A patch release must not be overtaken by an older concurrent build.
+          for attempt in $(seq 1 45); do
+            if gh release view v0.6.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then break; fi
+            if [ "$attempt" -eq 45 ]; then echo 'Previous release is still pending; retry this job after it completes.' >&2; exit 1; fi
+            sleep 20
+          done
           gh release create "$RELEASE_TAG" dist/CGPanel-*.tar.gz dist/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
-            --title "CGPanel $RELEASE_TAG" --notes-file docs/RELEASE-v0.6.0.md
+            --title "CGPanel $RELEASE_TAG" --notes-file "docs/RELEASE-$RELEASE_TAG.md"
