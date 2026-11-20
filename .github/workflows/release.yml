@@ -1,0 +1,69 @@
+name: Publish release
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.100.0'
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, tomllib
+          from pathlib import Path
+          version=tomllib.loads(Path('Cargo.toml').read_text())['package']['version']
+          tag=os.environ['RELEASE_TAG']
+          assert re.fullmatch(r'v\d+\.\d+\.\d+',tag), 'Only stable semantic versions are published'
+          assert tag=='v'+version, 'Tag and Cargo version disagree'
+          assert json.loads(Path('package.json').read_text())['version']==version
+          PY
+      - name: Build release binaries
+        run: |
+          npm ci --ignore-scripts
+          npm run build:css
+          git diff --exit-code -- web/style.css
+          cargo build --release --locked --bins
+      - name: Test optimized panel and workspace binaries
+        env:
+          CGPANEL_TEST_BINARY: target/release/cgpanel
+          CGPANEL_WORKSPACE_BIN: target/release/cgpanel-workspace
+        run: |
+          python3 tests/admin_api.py
+          python3 tests/release_features.py
+          python3 tests/workspace.py
+      - name: Package and verify
+        run: |
+          python3 scripts/package_release.py dist
+          cd dist
+          sha256sum --check SHA256SUMS
+      - name: Publish GitHub release with installable assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/CGPanel-*.tar.gz dist/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+            --title "CGPanel $RELEASE_TAG" --notes-file docs/RELEASE-v0.6.0.md

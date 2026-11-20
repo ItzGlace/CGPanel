@@ -41,7 +41,7 @@ This is a release candidate, not a claim that every hosting-server workflow has 
 
 SSH to the user-supplied test server on port 22 returned `Connection refused`, including a retry outside the command sandbox. No remote installer or host-changing test was run. The repository's HTTPS Git proxy supports reads; GitHub API requests were denied by the cloud proxy (`CONNECT ... 403`). Additional destinations were saved in the environment configuration draft but the running allowlist remained unchanged.
 
-No stable GitHub release, deployment to the user's existing installation, actual model-client session, live mail-delivery success, complete phpMyAdmin parity or sub-minute update guarantee is established by this record.
+Release publication is handled by the version-tag GitHub Actions workflow after its required checks pass. This record does not establish deployment to an existing installation, an actual model-client session, live mail-delivery success, complete phpMyAdmin parity or a sub-minute update guarantee. The user subsequently requested local/container testing without a test VM; no device bridge is required.
 
 ## Repeat checks
 
