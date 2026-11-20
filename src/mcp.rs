@@ -314,6 +314,17 @@ async fn register(State(app): State<App>, Json(v): Json<Value>) -> Api<Value> {
         json!({"client_id":client,"redirect_uris":urls,"token_endpoint_auth_method":"none","grant_types":["authorization_code"],"response_types":["code"]}),
     ))
 }
+fn oauth_scope(value: &str) -> Result<&'static str, Error> {
+    let scopes: Vec<_> = value.split_ascii_whitespace().collect();
+    if scopes.iter().any(|s| !["read", "manage"].contains(s)) {
+        return Err(bad("Unknown OAuth scope"));
+    }
+    Ok(if scopes.contains(&"manage") {
+        "manage"
+    } else {
+        "read"
+    })
+}
 async fn validate_auth(app: &App, v: &Value) -> Result<(), Error> {
     let redirects: Option<String> =
         sqlx::query_scalar("SELECT redirects FROM oauth_clients WHERE id=?")
@@ -326,7 +337,7 @@ async fn validate_auth(app: &App, v: &Value) -> Result<(), Error> {
     if !redirects.iter().any(|u| u == text(v, "redirect_uri"))
         || text(v, "code_challenge_method") != "S256"
         || text(v, "code_challenge").len() != 43
-        || !["read", "manage"].contains(&text(v, "scope"))
+        || oauth_scope(text(v, "scope")).is_err()
         || text(v, "response_type") != "code"
     {
         return Err(bad(
@@ -368,7 +379,7 @@ async fn authorize(
         .bind(text(&v, "client_id"))
         .bind(text(&v, "redirect_uri"))
         .bind(text(&v, "code_challenge"))
-        .bind(text(&v, "scope"))
+        .bind(oauth_scope(text(&v, "scope"))?)
         .execute(&app.db)
         .await?;
     let mut url = reqwest::Url::parse(text(&v, "redirect_uri")).map_err(|_| bad("Invalid URI"))?;

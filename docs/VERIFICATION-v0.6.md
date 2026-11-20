@@ -14,6 +14,7 @@ This is a release candidate, not a claim that every hosting-server workflow has 
 - Disposable Ubuntu 24.04 container: real MariaDB/PostgreSQL DDL and CRUD, rejection of multiple statements, other-database denial and host-file denial.
 - BIND `named-checkzone` accepts the broker-generated parent/subdomain, MX, SPF, multi-string DKIM and DMARC fixture. A separate syntax fixture includes child ACME challenges.
 - Real Nginx public-page cache hits; cookie/Authorization bypasses; private/Set-Cookie responses excluded. Tests read the shipped cache directives.
+- Optimized Ubuntu 24.04 release binaries passed the administrator API, MCP/OAuth/login and workspace suites inside Ubuntu. The release bundle manifest, binary/helper membership and SHA-256 checksum were checked.
 - Generated OpenAPI reference: 78 documented management operations. Python compilation and shell syntax checks.
 
 ## Request-by-request scope

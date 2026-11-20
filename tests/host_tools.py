@@ -26,7 +26,7 @@ def query(engine,sql,ok=True):
 for engine in ['mysql','postgresql']:
  query(engine,'CREATE TABLE items(id INTEGER PRIMARY KEY, label VARCHAR(100));')
  query(engine,"INSERT INTO items VALUES(1,'hello');")
- assert query(engine,'SELECT * FROM items')['rows']==[['1','hello']]
+ selected=query(engine,'SELECT * FROM items');assert selected['rows']==[['1','hello']] and selected['affected']==1
  query(engine,"UPDATE items SET label='changed' WHERE id=1")
  assert query(engine,'SELECT label FROM items')['rows']==[['changed']]
  query(engine,'SELECT 1; SELECT 2;',False)

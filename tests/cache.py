@@ -12,7 +12,7 @@ class Origin(http.server.BaseHTTPRequestHandler):
  count=0
  def do_GET(self):
   Origin.count+=1;self.send_response(200)
-  self.send_header('Cache-Control','private, max-age=60' if self.path=='/private' else 'public, max-age=60')
+  self.send_header('Cache-Control',{'/private':'private, max-age=60','/extension':'x-custom=public, max-age=60'}.get(self.path,'public, max-age=60'))
   if self.path=='/set-cookie':self.send_header('Set-Cookie','session=private; HttpOnly')
   self.send_header('Content-Length','2');self.end_headers();self.wfile.write(b'OK')
  def log_message(self,*args):pass
@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory() as folder:
   def get(path,headers=None):
    with urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}'+path,headers=headers or {})) as r:return r.headers.get('X-CGPanel-Cache')
   values=[get('/public') for _ in range(4)];assert values[-1]=='HIT',values
-  for path in ['/private','/set-cookie']:
+  for path in ['/private','/set-cookie','/extension']:
    values=[get(path) for _ in range(4)];assert 'HIT' not in values,(path,values)
   for headers in [{'Cookie':'login=secret'},{'Authorization':'Bearer secret'}]:
    values=[get('/public',headers) for _ in range(3)];assert values==['BYPASS']*3,values

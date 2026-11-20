@@ -565,6 +565,25 @@ fn zone_root<'a>(reg: &'a Registry, id: &'a str) -> &'a str {
         .map(|(id, _)| id.as_str())
         .unwrap_or(id)
 }
+fn record_label(reg: &Registry, id: &str, zone: &str, record: &Item) -> Result<String> {
+    let domain_id = s(&record.data, "domain_id");
+    let source = reg.items.get(domain_id).context("DNS domain missing")?;
+    let suffix = if domain_id == id {
+        ""
+    } else {
+        s(&source.data, "name")
+            .strip_suffix(&format!(".{zone}"))
+            .context("Invalid DNS suffix")?
+    };
+    let label = s(&record.data, "name");
+    Ok(if suffix.is_empty() {
+        label.to_string()
+    } else if label == "@" {
+        suffix.to_string()
+    } else {
+        format!("{label}.{suffix}")
+    })
+}
 async fn zone_content(
     reg: &Registry,
     id: &str,
@@ -578,44 +597,26 @@ async fn zone_content(
         .filter(|i| i.kind == "dns" && zone_root(reg, s(&i.data, "domain_id")) == id)
         .collect();
     let mut content=format!("$ORIGIN {zone}.\n$TTL 300\n@ IN SOA ns1.{zone}. hostmaster.{zone}. ({serial} 3600 900 1209600 300)\n@ IN NS ns1.{zone}.\nns1 IN A {server_ip}\n");
-    if !records
-        .iter()
-        .any(|i| s(&i.data, "name") == "@" && s(&i.data, "type") == "A")
-    {
+    if !records.iter().any(|i| {
+        s(&i.data, "domain_id") == id && s(&i.data, "name") == "@" && s(&i.data, "type") == "A"
+    }) {
         content.push_str(&format!("@ IN A {server_ip}\n"));
     }
-    for (child_id, child) in reg.items.iter().filter(|(child_id, i)| {
+    for (_child_id, child) in reg.items.iter().filter(|(child_id, i)| {
         i.kind == "domains" && *child_id != id && zone_root(reg, child_id) == id
     }) {
         let label = s(&child.data, "name")
             .strip_suffix(&format!(".{zone}"))
             .context("Invalid child zone")?;
         if !records.iter().any(|r| {
-            s(&r.data, "domain_id") == child_id
-                && s(&r.data, "name") == "@"
-                && ["A", "CNAME"].contains(&s(&r.data, "type"))
+            ["A", "AAAA", "CNAME"].contains(&s(&r.data, "type"))
+                && record_label(reg, id, zone, r).is_ok_and(|name| name == label)
         }) {
             content.push_str(&format!("{label} IN A {server_ip}\n"));
         }
     }
     for r in records {
-        let domain_id = s(&r.data, "domain_id");
-        let record_domain = reg.items.get(domain_id).context("DNS domain missing")?;
-        let suffix = if domain_id == id {
-            ""
-        } else {
-            s(&record_domain.data, "name")
-                .strip_suffix(&format!(".{zone}"))
-                .context("Invalid DNS suffix")?
-        };
-        let label = s(&r.data, "name");
-        let qualified = if suffix.is_empty() {
-            label.to_string()
-        } else if label == "@" {
-            suffix.to_string()
-        } else {
-            format!("{label}.{suffix}")
-        };
+        let qualified = record_label(reg, id, zone, r)?;
         let name = qualified.as_str();
         let kind = s(&r.data, "type");
         let val = s(&r.data, "value");
@@ -1580,6 +1581,7 @@ mod release_tests {
             ("parent", "example.com"),
             ("child", "api.example.com"),
             ("mail", "mail.example.com"),
+            ("www", "www.example.com"),
         ] {
             reg.items.insert(
                 id.into(),
@@ -1613,14 +1615,30 @@ mod release_tests {
                 data: json!({"domain_id":"child","type":"TXT","name":"verify","value":"abc"}),
             },
         );
+        reg.items.insert("www_cname".into(),Item{tenant:"tenant".into(),kind:"dns".into(),data:json!({"domain_id":"parent","type":"CNAME","name":"www","value":"cdn.example.net"})});
         reg.items.insert("dkim".into(),Item{tenant:"tenant".into(),kind:"dns".into(),data:json!({"domain_id":"parent","type":"TXT","name":"cgp._domainkey","value":format!("v=DKIM1; k=rsa; p={}","a".repeat(360))})});
         let zone = zone_content(&reg, "parent", "example.com", "192.0.2.10", 2026112001)
             .await
             .unwrap();
         assert!(zone.contains("api IN A 192.0.2.10"));
+        assert!(!zone.contains("www IN A"));
+        assert!(zone.contains("www 300 IN CNAME cdn.example.net."));
         assert!(zone.contains("verify.api 300 IN TXT \"abc\""));
         assert!(zone.contains("v=DMARC1; p=none"));
         assert!(zone.contains("\" \""));
+        reg.items.insert(
+            "child_a".into(),
+            Item {
+                tenant: "tenant".into(),
+                kind: "dns".into(),
+                data: json!({"domain_id":"child","type":"A","name":"@","value":"192.0.2.11"}),
+            },
+        );
+        let with_child_a = zone_content(&reg, "parent", "example.com", "192.0.2.10", 2026112002)
+            .await
+            .unwrap();
+        assert!(with_child_a.contains("@ IN A 192.0.2.10"));
+        assert!(with_child_a.contains("api 300 IN A 192.0.2.11"));
         if let Ok(path) = std::env::var("CGPANEL_DNS_FIXTURE_OUT") {
             std::fs::write(path, zone).unwrap();
         }

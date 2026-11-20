@@ -31,7 +31,7 @@ def execute(value):
                 encoded=json.dumps(normalized)
                 if len(rows)>=500 or size+len(encoded)>1048576:truncated=True;break
                 rows.append(normalized);size+=len(encoded)
-        result={'columns':columns,'rows':rows,'affected':max(0,cursor.rowcount),'truncated':truncated}
+        result={'columns':columns,'rows':rows,'affected':len(rows) if columns else max(0,cursor.rowcount),'truncated':truncated}
         # Truncated statements are rolled back (e.g. large UPDATE RETURNING).
         if truncated:connection.rollback()
         else:connection.commit()

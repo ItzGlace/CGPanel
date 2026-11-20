@@ -49,6 +49,9 @@ def main():
     verifier=secrets.token_urlsafe(48);challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
     request={'client_id':client['client_id'],'redirect_uri':'https://client.example/callback','response_type':'code','code_challenge':challenge,'code_challenge_method':'S256','scope':'read','state':'opaque'}
     user.call('/api/mcp/authorize','POST',{**request,'redirect_uri':'https://evil.example'},status=400)
+    user.call('/api/mcp/authorize','POST',{**request,'scope':''})
+    user.call('/api/mcp/authorize','POST',{**request,'scope':'read manage'})
+    user.call('/api/mcp/authorize','POST',{**request,'scope':'root'},status=400)
     response=user.call('/api/mcp/authorize','POST',request)
     from urllib.parse import urlparse,parse_qs,urlencode
     code=parse_qs(urlparse(response['redirect']).query)['code'][0]
