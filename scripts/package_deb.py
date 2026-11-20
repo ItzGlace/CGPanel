@@ -21,5 +21,5 @@ with tempfile.TemporaryDirectory(prefix='cgp-deb-') as temp:
  for path in stage.rglob('*'):
   if path.is_symlink():continue
   path.chmod(0o755 if path.is_dir() or path.stat().st_mode&0o111 else 0o644)
- subprocess.run(['dpkg-deb','--root-owner-group','--build','--compression=xz','--threads-max=2',str(stage),str(output/f'cgpanel_{version}_amd64.deb')],check=True)
+ subprocess.run(['dpkg-deb','--root-owner-group','--build','-Zxz','--threads-max=2',str(stage),str(output/f'cgpanel_{version}_amd64.deb')],check=True)
 print(output/f'cgpanel_{version}_amd64.deb')
