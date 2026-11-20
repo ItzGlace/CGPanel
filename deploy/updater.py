@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Root-owned updater for stable ItzGlace/CGPanel GitHub releases, with rollback."""
 import urllib.error
+from contextlib import closing
 import fcntl, hashlib, json, os, pathlib, platform, re, shutil, sqlite3, subprocess, sys, tarfile, tempfile, time, urllib.request
 ROOT=pathlib.Path('/var/lib/cgpanel-updates')
 ROOT.mkdir(mode=0o700,exist_ok=True)
@@ -8,7 +9,26 @@ os.umask(0o077)
 lock=(ROOT/'lock').open('w')
 try: fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 except BlockingIOError: raise SystemExit(0)
-def run(*command): return subprocess.run(command,check=True,capture_output=True,text=True,timeout=1800)
+def safe_error(output):
+    output=re.sub(r'(https?://)[^\s/@]+:[^\s/@]+@',r'\1[redacted]@',output)
+    return re.sub(r'([?&](?:token|access_token|api_key|password|secret|sig|signature)=)[^&\s]+',r'\1[redacted]',output,flags=re.I)
+def run(*command):
+    log=ROOT/'last-update.log'
+    with log.open('a') as transcript:
+        log.chmod(0o600)
+        transcript.write('\nUpdate installer invocation: '+time.strftime('%Y-%m-%d %H:%M:%S UTC',time.gmtime())+'\n')
+        try:
+            result=subprocess.run(command,check=False,capture_output=True,text=True,timeout=1800)
+        except subprocess.TimeoutExpired as error:
+            for output in (error.stdout,error.stderr):
+                if output:transcript.write(output.decode(errors='replace') if isinstance(output,bytes) else output)
+            raise RuntimeError('Release installation timed out; details: '+str(log)) from error
+        transcript.write(result.stdout or '')
+        transcript.write(result.stderr or '')
+    if result.returncode:
+        detail=safe_error((result.stderr or result.stdout or 'No installer output was returned').strip())[-4000:]
+        raise RuntimeError('Release installation failed (exit '+str(result.returncode)+'): '+detail+'\nFull installer log: '+str(ROOT/'last-install.log')+'; updater log: '+str(log))
+    return result
 def write(value):
     temp=ROOT/'status.tmp';temp.write_text(json.dumps(value));temp.replace(ROOT/'status.json')
 def version(value):
@@ -34,7 +54,7 @@ try:
     status.update(available=tag,installed=installed,release_url=release['html_url'],state='available' if version(tag)>version(installed) else 'current')
     write(status)
     if '--check' in sys.argv or version(tag)<=version(installed): raise SystemExit(0)
-    with sqlite3.connect('/var/lib/cgpanel/panel.db') as db:
+    with closing(sqlite3.connect('file:/var/lib/cgpanel/panel.db?mode=ro',uri=True)) as db:
         if db.execute("SELECT count(*) FROM jobs WHERE status='running'").fetchone()[0]:
             status.update(state='deferred',error='Background jobs are running. The next scheduled check will retry.');write(status);raise SystemExit(0)
     assert platform.machine()=='x86_64','This release updater currently supports x86_64'

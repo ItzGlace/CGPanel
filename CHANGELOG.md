@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2
+
+- Wait for APT index/dpkg locks during dependency preparation, before stopping the panel. Retry lock races within a bounded preparation window; preserve repository/signature errors.
+- Retain the actual installer failure in update status and root-only persistent logs.
+- Explicitly close SQLite connections and restore database/binaries atomically during rollback, including compatibility with the legacy updater's open connection.
+- Add real 0.5.2 panel upgrade, held-lock, preparation-failure and rollback regressions with website keepalive and data checks.
+
+
 ## 0.6.1
 
 - Read the fresh installation version from Cargo.toml so updater metadata matches the binaries.

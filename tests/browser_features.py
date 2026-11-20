@@ -18,7 +18,7 @@ def main():
      if action=='integration_list':result=[]
      if action in ('protection_stats','monitor_security'):result={'samples':42,'rejected':3,'server_errors':0,'sources':[],'note':'Isolated browser fixture'}
      if action=='workspace_files':result={'content':'line\n'*200+'NEEDLE\n','revision':'fixture'}
-     if action=='update_status':result={'installed':'0.6.1','config':{'enabled':True},'status':{'state':'current'}}
+     if action=='update_status':result={'installed':'0.6.2','config':{'enabled':True},'status':{'state':'current'}}
      if action=='mail_status':result={'settings':{'enabled':False,'hostname':'mail.example.com'},'domains':[],'mailboxes':[],'server_ip':'192.0.2.10'}
      if action=='database_query':result={'columns':['answer'],'rows':[['1']],'affected':1,'truncated':False}
      if action=='budget_status':result={'total':{'memory_mb':4096,'cpu_millis':4000,'disk_mb':8192},'allocated':{'memory_mb':512,'cpu_millis':1000,'disk_mb':1024},'free':{'memory_mb':3584,'cpu_millis':3000,'disk_mb':7168},'applications':[{'id':'c'*32,'limits':{'memory_mb':512,'cpu_millis':1000,'disk_mb':1024},'disk_enforced':True}]}

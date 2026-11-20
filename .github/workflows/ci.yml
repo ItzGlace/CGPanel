@@ -25,6 +25,7 @@ jobs:
       - run: CGPANEL_DNS_FIXTURE_OUT=/tmp/cgpanel-generated.zone cargo test --locked
       - run: cargo build --locked --bin cgpanel-workspace && python3 tests/workspace.py
       - run: cargo build --locked --bin cgpanel && python3 tests/admin_api.py
+      - run: python3 tests/package_manager.py && python3 tests/updater_errors.py
       - run: python3 tests/release_features.py && python3 tests/monitor_alerts.py
       - run: npx playwright install --with-deps chromium
       - run: python3 tests/browser_features.py
@@ -39,3 +40,15 @@ jobs:
       - run: docker run --rm -v /tmp/cgpanel-generated.zone:/generated.zone:ro cgpanel-integration named-checkzone example.com /generated.zone
       - run: docker build -t cgpanel-mail-test -f tests/mail-tools.Dockerfile tests
       - run: docker run --rm --network none --add-host mail.cgpanel.test:127.0.0.1 -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-mail-test python3 tests/mail_protocols.py
+      - run: bash tests/build_upgrade_baseline.sh
+      - run: docker build -t cgpanel-upgrade-test -f tests/upgrade-tools.Dockerfile tests
+      - name: Verify legacy upgrade, preflight failure and rollback
+        run: |
+          set -e
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          for scenario in success prepare-failure setup-failure; do
+            docker run --rm --network none -v "$GITHUB_WORKSPACE:/project:ro" -v "$GITHUB_WORKSPACE/target:/candidate:ro" \
+              -e CGPANEL_DISPOSABLE_TEST=1 -e CGPANEL_UPGRADE_LEGACY_BINARY=/candidate/upgrade-baseline-cgpanel \
+              -e CGPANEL_UPGRADE_NEW_BIN_DIR=/candidate/debug -e "CGPANEL_UPGRADE_NEW_VERSION=$version" \
+              cgpanel-upgrade-test python3 tests/upgrade.py "$scenario"
+          done

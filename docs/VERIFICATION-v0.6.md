@@ -18,6 +18,14 @@ This is a release candidate, not a claim that every hosting-server workflow has 
 - Optimized Ubuntu 24.04 release binaries passed the administrator API, MCP/OAuth/login and workspace suites inside Ubuntu. The release bundle manifest, binary/helper membership and SHA-256 checksum were checked.
 - Generated OpenAPI reference: 78 documented management operations. Python compilation and shell syntax checks.
 
+## Update failure regression coverage (0.6.2)
+
+The 0.5.2 update failure was traced to dependency preparation while another APT process held `/var/lib/apt/lists/lock`. No panel stop or binary replacement had occurred in that failed attempt.
+
+Five package-manager regressions cover real POSIX index locks, timeout without executing APT, release of a lock, a lock race and non-retry of signature/repository failures. Four updater-output tests cover retained stderr, successful output, credential redaction and timeout logs.
+
+A disposable Ubuntu container then runs the actual 0.5.2 panel binary, an unprivileged panel account, a real SQLite database and real Nginx-proxied website. The release packager creates the upgrade payload. Success, failed preparation and forced configuration failure all verify data preservation and website reachability. Rollback reproduces the legacy updater retaining an SQLite connection while the installer subprocess runs; files are restored atomically and all installer SQLite connections are explicitly closed. systemd and nftables use fixture adapters, so these results do not certify a complete hosting-server deployment.
+
 ## Request-by-request scope
 
 | Area | Implementation and validation | Outstanding |
@@ -34,7 +42,7 @@ This is a release candidate, not a claim that every hosting-server workflow has 
 | Ports 80/443 | Configurable container HTTP port, PORT-aware starters and PHP launcher | Actual rootless low-port binding/runtime tests; upstream TLS is not automatic |
 | Private workloads | Account bridge, no host publication for private mode, peer names/private addresses | Cross-tenant network tests on real Podman; existing apps move networks when recreated |
 | Disk overselling/pressure | Account promise admission, preallocated volumes, growth headroom, server pressure status; 30 GiB/50 GiB regression | Database/mail/image/backup/log growth is not covered by app workspace quotas; test actual loop volumes |
-| Updates/keepalive | Existing manual/automatic updater retained; dependencies before interruption, app restart policy, measured interruption record | Foreground broker operations, full rollback and under-load downtime not validated; under-one-minute target is not guaranteed |
+| Updates/keepalive | Existing manual/automatic updater retained; dependencies before interruption, app restart policy, measured interruption record | Binary/SQLite/config rollback is covered by the container fixture. Actual systemd/nftables/Podman deployment and production under-load downtime remain unverified; under-one-minute target is not guaranteed |
 | Multicore/performance | Account CPU quotas above one core; application performance controls and worker guidance; safe public-response cache | Framework worker/thread tuning remains application-specific |
 | Security/email monitoring | Five-minute sampled traffic and named-role login-failure signals; mailbox ownership on sending; both queues/cooldown tested | Journal coverage, actual attack traffic and external alert delivery; not proof of DDoS/data access |
 

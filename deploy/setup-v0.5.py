@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Install v0.5 host dependencies without changing tenant application runtimes."""
 import ipaddress,json,os,pathlib,re,shutil,subprocess,sys
+from package_manager import install_packages
 root=pathlib.Path(sys.argv[1]).resolve();assert os.geteuid()==0
 def run(*args,**kw):return subprocess.run(args,check=True,**kw)
 packages=['libnginx-mod-http-modsecurity','vsftpd','bubblewrap','e2fsprogs','util-linux','python3-pymysql','python3-psycopg2','python3-sqlparse','postfix','dovecot-core','dovecot-imapd','dovecot-lmtpd','rspamd','redis-server']
 missing=[p for p in packages if subprocess.run(['dpkg-query','-W','-f=${Status}',p],capture_output=True,text=True).stdout!='install ok installed']
 if missing:
     run('debconf-set-selections',input='postfix postfix/main_mailer_type select Local only\npostfix postfix/mailname string localhost\n',text=True)
-    run('apt-get','update',env={**os.environ,'DEBIAN_FRONTEND':'noninteractive'})
-    run('apt-get','-o','DPkg::Lock::Timeout=60','install','-y',*missing,env={**os.environ,'DEBIAN_FRONTEND':'noninteractive'})
+    install_packages(missing)
 if '--dependencies-only' in sys.argv:raise SystemExit(0)
 pathlib.Path('/var/lib/cgpanel-volumes').mkdir(mode=0o700,exist_ok=True)
 lib=pathlib.Path('/usr/local/lib/cgpanel');lib.mkdir(parents=True,exist_ok=True)
