@@ -281,6 +281,7 @@ async fn delete_backup(
 pub async fn start(app: App) -> Result<(), Error> {
     sqlx::query("UPDATE jobs SET status='interrupted',error='Panel restarted while this job was running; inspect the target before retrying',finished=? WHERE status='running'")
         .bind(chrono::Utc::now().timestamp()).execute(&app.db).await?;
+    sqlx::query("UPDATE account_deletions SET state='failed',error='Panel restarted before deletion was confirmed complete; review the account and retry',updated=unixepoch() WHERE state IN ('queued','running') AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id=account_deletions.job_id AND j.status IN ('queued','running'))").execute(&app.db).await?;
     for alerts in [false, true] {
         let app = app.clone();
         tokio::spawn(async move {

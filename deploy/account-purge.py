@@ -45,12 +45,17 @@ def plan(tenant):
     if any(not isinstance(name,str) or len(name)>253 or len(name.split('.'))<2 or any(not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',label) for label in name.split('.')) for _,name in domains):raise ValueError('Invalid stored domain name')
     for _,name in domains:
         for other in registry['items'].values():
+            hostname=other.get('data',{}).get('hostname','')
+            if other.get('tenant')!=tenant and other.get('kind')=='mail_settings' and other.get('data',{}).get('enabled') and (hostname==name or hostname.endswith('.'+name)):
+                blockers.append('The server-wide mail hostname depends on '+name)
+        for other in registry['items'].values():
             foreign=other.get('data',{}).get('name','')
             if other.get('tenant')!=tenant and other.get('kind')=='domains' and foreign.endswith('.'+name):blockers.append('Another account owns a subdomain of '+name)
     home=HOMES/tenant;os_name='cg_'+tenant[:20]
     try:account=pwd.getpwnam(os_name)
     except KeyError:account=None
     if account and (account.pw_uid<1000 or account.pw_gid<1000 or account.pw_dir!=str(home) or grp.getgrgid(account.pw_gid).gr_name!=os_name):blockers.append('Operating-system account is not an isolated CGPanel tenant')
+    if account and any(entry.pw_uid==account.pw_uid and entry.pw_name!=os_name for entry in pwd.getpwall()):blockers.append('Another operating-system account shares the tenant UID')
     if home.is_symlink():blockers.append('Tenant home is a symbolic link; inspect it before deletion')
     apps={key for key,item in inventory.items() if item['kind']=='apps'};volumes=[]
     for file in VOLUMES.glob('*.json'):
@@ -86,6 +91,7 @@ def plan(tenant):
             if entry.pw_gid!=account.pw_gid or entry.pw_name==os_name:continue
             expected=entry.pw_name in named or any(entry.pw_name=='cgsftp_'+app[:16] for app in apps)
             if not expected or entry.pw_uid<1000:blockers.append('Unrecognized OS account shares tenant group: '+entry.pw_name)
+            elif any(other.pw_uid==entry.pw_uid and other.pw_name!=entry.pw_name for other in pwd.getpwall()):blockers.append('Another operating-system account shares a transfer UID')
             else:transfers.append(entry.pw_name)
     for app in apps:
         file=VOLUMES/(app+'.json')
@@ -98,7 +104,7 @@ def plan(tenant):
                 try:
                     if needle in file.read_text():blockers.append('A shared Nginx configuration uses this certificate: '+str(file))
                 except (OSError,UnicodeError):pass
-    private={'tenant':tenant,'username':row[0],'inventory':inventory,'apps':sorted(apps),'volumes':volumes,'binds':binds,'transfers':transfers,'jobs':jobs}
+    private={'tenant':tenant,'username':row[0],'inventory':inventory,'apps':sorted(apps),'volumes':volumes,'binds':binds,'transfers':transfers,'jobs':jobs,'os_identity':{'uid':account.pw_uid,'gid':account.pw_gid} if account else None}
     previous=marker.get('data',{}).get('plan')
     if previous:
         private={key:value for key,value in previous.items() if key!='public'}

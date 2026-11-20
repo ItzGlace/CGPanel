@@ -49,6 +49,15 @@ with tempfile.TemporaryDirectory(prefix='cgp-accounts-') as tmp:
    assert state=='failed'
    with sqlite3.connect(dbfile) as db:assert db.execute('SELECT enabled FROM users WHERE id=?',(tenant,)).fetchone()==(0,)
    admin.call('/api/v2/jobs/'+job+'/retry','POST',{},status=400)
+   # Recreate an interrupted dispatcher and verify startup makes deletion reviewable.
+   panel.terminate();panel.wait(timeout=10)
+   with sqlite3.connect(dbfile) as db:
+    db.execute("UPDATE jobs SET status='running' WHERE id=?",(job,));db.execute("UPDATE account_deletions SET state='running' WHERE user_id=?",(tenant,))
+   panel=subprocess.Popen([str(BINARY)],env=env,stdout=log,stderr=log)
+   for _ in range(100):
+    try:admin.call('/healthz');break
+    except OSError:time.sleep(.05)
+   assert admin.call('/api/users/'+tenant+'/deletion')['deletion']['state']=='failed'
    failure['enabled']=False;job=admin.call('/api/users/'+tenant,'DELETE',body)['id']
    for _ in range(100):
     state=next(j for j in admin.call('/api/v2/jobs') if j['id']==job)['status']

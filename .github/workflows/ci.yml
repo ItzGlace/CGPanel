@@ -1,6 +1,7 @@
 name: Rust checks
 on:
   push:
+    branches: ['**']
   pull_request:
   workflow_call:
 permissions:
@@ -61,6 +62,7 @@ jobs:
               cgpanel-upgrade-test python3 tests/upgrade.py "$scenario"
           done
       - run: docker build -t cgpanel-package-test -f tests/package-tools.Dockerfile tests
+      - run: docker run --rm --network none -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 -e CGPANEL_BROKER_BINARY=/project/target/debug/cgpanel-agent cgpanel-package-test python3 tests/retirement_broker.py
       - name: Verify signed APT package and package upgrade
         run: |
           set -euo pipefail

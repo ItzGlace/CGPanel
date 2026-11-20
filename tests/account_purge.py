@@ -26,6 +26,15 @@ except ValueError:pass
 # Root-owned records are authoritative; a tenant-created filename cannot claim another volume.
 (purge.HOMES/uids[0]/'apps'/apps[1]).mkdir()
 p=purge.plan(uids[0]);assert p['apps']==[apps[0]] and not p['public']['blockers'],p
+primary=pwd.getpwnam('cg_'+uids[0][:20]);subprocess.run(['useradd','-o','-u',str(primary.pw_uid),'-M','foreign_shared_uid'],check=True)
+assert any('shares the tenant UID' in b for b in purge.plan(uids[0])['public']['blockers'])
+subprocess.run(['userdel','foreign_shared_uid'],check=True)
+# A server mail hostname remains a dependency even without a domain-ID certificate reference.
+items['9'*32]={'tenant':uids[0],'kind':'domains','data':{'name':'mail-host.example'}}
+items['mail_settings']={'tenant':uids[1],'kind':'mail_settings','data':{'enabled':True,'hostname':'mail.mail-host.example'}}
+registry.write_text(json.dumps({'items':items}));assert any('mail hostname' in b for b in purge.plan(uids[0])['public']['blockers'])
+del items['9'*32];del items['mail_settings'];registry.write_text(json.dumps({'items':items}))
+
 # Shared group members and foreign resource dependencies block deletion.
 foreign=items[apps[1]];foreign['data']['app_id']=apps[0];registry.write_text(json.dumps({'items':items}));assert purge.plan(uids[0])['public']['blockers'];del foreign['data']['app_id']
 items={apps[1]:foreign,'retire_'+uids[0]:{'tenant':uids[0],'kind':'retiring_tenant','data':{'state':'erasing','plan':p}}};registry.write_text(json.dumps({'items':items}))
