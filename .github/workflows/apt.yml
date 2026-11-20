@@ -40,7 +40,7 @@ jobs:
           install -d -m 0700 "$GNUPGHOME"
           trap 'rm -rf -- "$GNUPGHOME"' EXIT
           printf '%s' "$ARCHIVE_KEY" | gpg --batch --import
-          test "$(gpg --batch --with-colons --list-keys | awk -F: '$1=="fpr" {print $10; exit}')" = A1CFE2796A8924B3D02562BA81BA83CC10B12E2F
+          test "$(gpg --batch --with-colons --list-keys | awk -F: '$1=="fpr" && !seen++ {print $10}')" = A1CFE2796A8924B3D02562BA81BA83CC10B12E2F
           git fetch origin apt
           git worktree add --detach "$RUNNER_TEMP/apt-repository" origin/apt
           python3 scripts/build_apt_repository.py package/cgpanel_*_amd64.deb "$RUNNER_TEMP/apt-repository" --key A1CFE2796A8924B3D02562BA81BA83CC10B12E2F

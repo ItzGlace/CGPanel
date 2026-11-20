@@ -66,13 +66,21 @@ jobs:
       - name: Verify signed APT package and package upgrade
         run: |
           set -euo pipefail
+          exec > >(tee "$RUNNER_TEMP/cgpanel-apt-check.log") 2>&1
+          report_apt_failure() {
+            cg_failure_status=$?
+            trap - ERR
+            python3 -c 'import os,pathlib; text=pathlib.Path(os.environ["RUNNER_TEMP"],"cgpanel-apt-check.log").read_text()[-6000:]; print("::error title=APT verification::"+text.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            exit "$cg_failure_status"
+          }
+          trap report_apt_failure ERR
           version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
           CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/upgrade-package" python3 scripts/package_deb.py "$GITHUB_WORKSPACE/target/upgrade-package/bundle"
           export GNUPGHOME="$RUNNER_TEMP/cgpanel-test-signing"
           install -d -m 0700 "$GNUPGHOME"
           trap 'rm -rf -- "$GNUPGHOME"' EXIT
           gpg --batch --pinentry-mode loopback --passphrase '' --quick-generate-key 'CGPanel ephemeral package test' ed25519 sign 1d
-          fingerprint=$(gpg --batch --with-colons --list-keys | awk -F: '$1=="fpr" {print $10; exit}')
+          fingerprint=$(gpg --batch --with-colons --list-keys | awk -F: '$1=="fpr" && !seen++ {print $10}')
           python3 scripts/build_apt_repository.py "$GITHUB_WORKSPACE/target/upgrade-package/bundle/cgpanel_${version}_amd64.deb" "$GITHUB_WORKSPACE/target/apt-test" --key "$fingerprint"
           docker run --rm --network none -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 -e CGPANEL_APT_TEST_REPOSITORY=/project/target/apt-test cgpanel-package-test python3 tests/apt_package.py
           docker run --rm --network none -v "$GITHUB_WORKSPACE:/project:ro" -v "$GITHUB_WORKSPACE/target:/candidate:ro" \
