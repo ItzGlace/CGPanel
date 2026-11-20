@@ -7,7 +7,9 @@ output=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else root/'dist').resolve();o
 deps=['ca-certificates','curl','gnupg','python3','python3-venv','python3-pymysql','python3-psycopg2','python3-sqlparse','nginx','libnginx-mod-http-modsecurity','podman','uidmap','slirp4netns','fuse-overlayfs','dbus-user-session','mariadb-server','postgresql-16','bind9','bind9-utils','nftables','fail2ban','openssl','openssh-server','vsftpd','bubblewrap','e2fsprogs','util-linux','postfix','dovecot-core','dovecot-imapd','dovecot-lmtpd','rspamd','redis-server','rclone','iptables','libssl3t64','libc6 (>= 2.39)']
 with tempfile.TemporaryDirectory(prefix='cgp-deb-') as temp:
  stage=pathlib.Path(temp);payload=stage/'usr/share/cgpanel/payload';payload.mkdir(parents=True);(payload/'bin').mkdir()
- for name in ['cgpanel','cgpanel-agent','cgpanel-workspace','cgpanel-egress','cgpanel-acme-hook']:shutil.copy2(target/name,payload/'bin'/name)
+ for name in ['cgpanel','cgpanel-agent','cgpanel-workspace','cgpanel-egress','cgpanel-acme-hook']:
+  shutil.copy2(target/name,payload/'bin'/name)
+  subprocess.run(['strip','--strip-debug',str(payload/'bin'/name)],check=True)
  shutil.copytree(root/'deploy',payload/'deploy',ignore=shutil.ignore_patterns('__pycache__','*.pyc','debian'))
  shutil.copy2(root/'Cargo.toml',payload/'Cargo.toml');(payload/'manifest.json').write_text(json.dumps({'version':version,'platform':'ubuntu-24.04-x86_64'}))
  (payload/'target').mkdir();(payload/'target/release').symlink_to('../bin')
@@ -19,5 +21,5 @@ with tempfile.TemporaryDirectory(prefix='cgp-deb-') as temp:
  for path in stage.rglob('*'):
   if path.is_symlink():continue
   path.chmod(0o755 if path.is_dir() or path.stat().st_mode&0o111 else 0o644)
- subprocess.run(['dpkg-deb','--root-owner-group','--build','--compression=xz',str(stage),str(output/f'cgpanel_{version}_amd64.deb')],check=True)
+ subprocess.run(['dpkg-deb','--root-owner-group','--build','--compression=xz','--threads-max=2',str(stage),str(output/f'cgpanel_{version}_amd64.deb')],check=True)
 print(output/f'cgpanel_{version}_amd64.deb')
