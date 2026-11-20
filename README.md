@@ -4,7 +4,7 @@
 
 CGPanel brings websites, APIs, Telegram bots, databases, and hosting tools into a familiar category-based dashboard. It is an independent project, with an original interface inspired by traditional hosting panels. It is not affiliated with cPanel.
 
-> **Version 0.6 is a development alpha, not a complete cPanel replacement.** Use a dedicated development server. Do not entrust production tenants or irreplaceable data to this release without further security review, operational testing, and off-server backups.
+> **Version 0.7 is a development alpha, not a complete cPanel replacement.** Use a dedicated development server. Do not entrust production tenants or irreplaceable data to this release without further security review, operational testing, and off-server backups.
 
 ## Documentation and administrator API
 
@@ -23,18 +23,18 @@ Core administrator endpoints include `GET /api/admin/system`, `GET /api/admin/au
 
 | Area | Included |
 | --- | --- |
-| Accounts | Administrator-created tenants, resource counts, account suspension, password changes, CIDR-based panel login rules |
+| Accounts | Administrator-created tenants, resource counts, account suspension, reviewed permanent deletion, password changes, CIDR-based panel login rules |
 | Applications | Rootless Podman workloads for Python, PHP, Node.js, Java, Rust, and static sites; web/API and background-worker modes |
 | Telegram bots | Run polling bots as workers, or attach a domain and TLS to webhook applications; provide tokens through container environment variables |
 | Domains | Administrator domain assignment, tenant subdomains, Nginx application routing, Let's Encrypt certificates |
 | DNS | Local authoritative BIND zones; A, AAAA, CNAME, MX, TXT, and NS records |
-| Databases | MySQL-compatible MariaDB and PostgreSQL; per-database users, database-specific grants, local access and IP/CIDR remote access with TLS |
+| Databases | MySQL-compatible MariaDB and PostgreSQL; per-database users, database-specific grants, a navigable table/row workspace with storage sizes, local access and IP/CIDR remote access with TLS |
 | Files | Workspace file browser, uploads, archive tools, separate editor, optional autosave, and safe media previews |
 | Console | Streamed unprivileged commands, completion, history, clear, and per-application program logs |
 | Schedules | Five-field cron, timing presets, IANA timezones, next runs, command tests and execution history |
 | Backups | Full `.cgp` ZIP archives with files, SQL, domain/DNS configuration; file/database restore; scheduled Telegram, S3 and SSH delivery |
-| Monitoring | HTTP availability, response times, Telegram outage/recovery alerts |
-| Analytics | Optional daily unique-IP estimates, page views, referrers, click heatmaps, technical SEO checks |
+| Monitoring | HTTP availability, response times, sampled security signals, Telegram and domain-email outage/recovery alerts |
+| Analytics | Opt-in automatic/manual tracking, daily unique-IP estimates, page views, referrers, click/pointer heatmaps and technical SEO checks |
 | HTTPS / CDN | HTTP or DNS verification, automatic renewal, short-lived panel IP certificates, Cloudflare zone export |
 | SOCKS5 | Per-integration proxy routing and enforced application TCP/DNS gateways, with administrator locks |
 | Mail | TLS SMTP/IMAP mailboxes, quotas, authenticated submission, Rspamd, DKIM and DNS guidance |

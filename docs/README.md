@@ -22,3 +22,6 @@ The OpenAPI document and endpoint reference are generated together by `python3 s
 - [Version 0.5 workspace guide](V0.5-GUIDE.md): services, budgets, recovery, console, protections and MFA.
 
 - [AI clients, Database Studio, monitoring and performance](V0.6-GUIDE.md)
+
+- [Database Studio, storage sizes and permanent account deletion](DATABASE-WORKSPACE.md)
+- [One-line installation and signed APT updates](INSTALLATION.md)
