@@ -3,11 +3,14 @@ mod backup_import;
 mod backups_agent;
 mod console_agent;
 mod cron_agent;
+mod database_agent;
 mod egress_agent;
 mod integrations_agent;
 mod mail_agent;
+mod performance_agent;
 mod protection_agent;
 mod resources_agent;
+mod security_agent;
 mod services_agent;
 mod tls_agent;
 mod transfers_agent;
@@ -268,8 +271,13 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         workspace_agent::image(runtime, s(&op.data, "version"))?
     };
     ensure!(
-        ["web", "worker"].contains(&s(&op.data, "mode")),
+        ["web", "worker", "private"].contains(&s(&op.data, "mode")),
         "Invalid application mode"
+    );
+    let container_port = op.data["container_port"].as_u64().unwrap_or(8080);
+    ensure!(
+        (1..=65535).contains(&container_port),
+        "Container port must be 1–65535"
     );
     tenant(&op.tenant).await?;
     if op.action == "create_app" && !s(&op.data, "version").is_empty() {
@@ -287,12 +295,13 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         let page = coming_soon();
         tokio::fs::write(format!("{dir}/index.html"), &page).await?;
         if file != "index.html" {
+            let starter_content = content.replace("8080", &container_port.to_string());
             tokio::fs::write(
                 format!("{dir}/{file}"),
                 if content.is_empty() {
                     page.as_str()
                 } else {
-                    content
+                    &starter_content
                 },
             )
             .await?;
@@ -325,13 +334,37 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
     } else {
         proxy_network.clone()
     };
+    let private_network = format!("cgp_private_{}", op.tenant);
+    if proxy_network.is_empty()
+        && pod(
+            &op.tenant,
+            args(&["network", "exists", &private_network]),
+            None,
+            20,
+        )
+        .await
+        .is_err()
+    {
+        pod(
+            &op.tenant,
+            args(&["network", "create", &private_network]),
+            None,
+            30,
+        )
+        .await?;
+    }
     let network = if proxy_network.is_empty() {
-        "slirp4netns:allow_host_loopback=false"
+        &private_network
     } else {
         &proxy_network
     };
     let custom = s(&op.data, "command");
-    let command = if custom.is_empty() { default } else { custom };
+    let starter_command = default.replace("8080", &container_port.to_string());
+    let command = if custom.is_empty() {
+        starter_command.as_str()
+    } else {
+        custom
+    };
     ensure!(command.len() <= 2000, "Command too long");
     let mut a = args(&[
         "run",
@@ -339,7 +372,7 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         "--name",
         &container(&op.id),
         "--restart",
-        if op.action == "runtime_configure" { "no" } else { "on-failure:3" },
+        if op.action == "runtime_configure" { "no" } else { "unless-stopped" },
         "--userns",
         &user_namespace,
         "--user",
@@ -364,7 +397,7 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         "--env",
         "HOME=/workspace",
         "--env",
-        "PORT=8080",
+        &format!("PORT={container_port}"),
         "--env",
         "PYTHONUSERBASE=/workspace/.local",
         "--env",
@@ -376,8 +409,9 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         "--log-opt",
         "max-size=10mb",
     ]);
+    a.extend(args(&["--sysctl", "net.ipv4.ip_unprivileged_port_start=0"]));
     if s(&op.data, "mode") == "web" && proxy_network.is_empty() {
-        a.extend(args(&["-p", &format!("127.0.0.1:{port}:8080")]));
+        a.extend(args(&["-p", &format!("127.0.0.1:{port}:{container_port}")]));
     }
     if let Some(env) = op.data["env"].as_object() {
         ensure!(env.len() <= 64, "Too many environment variables");
@@ -415,6 +449,26 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
         d[key] = allocation[key].clone();
     }
     d["port"] = json!(port);
+    d["container_port"] = json!(container_port);
+    if proxy_network.is_empty() {
+        d["private_network"] = json!(private_network);
+        d["private_host"] = json!(container(&op.id));
+        if let Ok(ip) = pod(
+            &op.tenant,
+            args(&[
+                "inspect",
+                "--format",
+                "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                &container(&op.id),
+            ]),
+            None,
+            20,
+        )
+        .await
+        {
+            d["private_ip"] = json!(ip.trim());
+        }
+    }
     d["image"] = json!(image);
     reg.items.insert(
         op.id.clone(),
@@ -443,7 +497,7 @@ async fn create_app(reg: &mut Registry, op: &Operation) -> Result<Value> {
     )
     .await;
     Ok(
-        json!({"port":port,"image":image,"state":"created","workspace":format!("/workspace/{file}")}),
+        json!({"port":port,"image":image,"state":"created","container_port":container_port,"private_host":reg.items[&op.id].data["private_host"],"private_ip":reg.items[&op.id].data["private_ip"],"workspace":format!("/workspace/{file}")}),
     )
 }
 async fn create_domain(reg: &mut Registry, op: &Operation) -> Result<Value> {
@@ -496,6 +550,123 @@ async fn create_domain(reg: &mut Registry, op: &Operation) -> Result<Value> {
     tls_agent::render_domain(reg, &op.id, &reg.items[&op.id]).await?;
     Ok(json!({"url":format!("http://{name}"),"tls":"not issued"}))
 }
+fn zone_root<'a>(reg: &'a Registry, id: &'a str) -> &'a str {
+    let Some(item) = reg.items.get(id) else {
+        return id;
+    };
+    reg.items
+        .iter()
+        .filter(|(_, i)| {
+            i.kind == "domains"
+                && i.tenant == item.tenant
+                && cgpanel::within_domain(s(&item.data, "name"), s(&i.data, "name"))
+        })
+        .min_by_key(|(_, i)| s(&i.data, "name").len())
+        .map(|(id, _)| id.as_str())
+        .unwrap_or(id)
+}
+async fn zone_content(
+    reg: &Registry,
+    id: &str,
+    zone: &str,
+    server_ip: &str,
+    serial: i64,
+) -> Result<String> {
+    let records: Vec<_> = reg
+        .items
+        .values()
+        .filter(|i| i.kind == "dns" && zone_root(reg, s(&i.data, "domain_id")) == id)
+        .collect();
+    let mut content=format!("$ORIGIN {zone}.\n$TTL 300\n@ IN SOA ns1.{zone}. hostmaster.{zone}. ({serial} 3600 900 1209600 300)\n@ IN NS ns1.{zone}.\nns1 IN A {server_ip}\n");
+    if !records
+        .iter()
+        .any(|i| s(&i.data, "name") == "@" && s(&i.data, "type") == "A")
+    {
+        content.push_str(&format!("@ IN A {server_ip}\n"));
+    }
+    for (child_id, child) in reg.items.iter().filter(|(child_id, i)| {
+        i.kind == "domains" && *child_id != id && zone_root(reg, child_id) == id
+    }) {
+        let label = s(&child.data, "name")
+            .strip_suffix(&format!(".{zone}"))
+            .context("Invalid child zone")?;
+        if !records.iter().any(|r| {
+            s(&r.data, "domain_id") == child_id
+                && s(&r.data, "name") == "@"
+                && ["A", "CNAME"].contains(&s(&r.data, "type"))
+        }) {
+            content.push_str(&format!("{label} IN A {server_ip}\n"));
+        }
+    }
+    for r in records {
+        let domain_id = s(&r.data, "domain_id");
+        let record_domain = reg.items.get(domain_id).context("DNS domain missing")?;
+        let suffix = if domain_id == id {
+            ""
+        } else {
+            s(&record_domain.data, "name")
+                .strip_suffix(&format!(".{zone}"))
+                .context("Invalid DNS suffix")?
+        };
+        let label = s(&r.data, "name");
+        let qualified = if suffix.is_empty() {
+            label.to_string()
+        } else if label == "@" {
+            suffix.to_string()
+        } else {
+            format!("{label}.{suffix}")
+        };
+        let name = qualified.as_str();
+        let kind = s(&r.data, "type");
+        let val = s(&r.data, "value");
+        ensure!(
+            cgpanel::dns_record(kind, name, val, zone),
+            "Invalid stored DNS record"
+        );
+        let ttl = r.data["ttl"].as_u64().unwrap_or(300).clamp(60, 86400);
+        let value = match kind {
+            "TXT" => cgpanel::dns_txt(val),
+            "CNAME" | "NS" => format!("{}.", val.trim_end_matches('.')),
+            "MX" => {
+                let (p, h) = val.split_once(' ').unwrap();
+                format!("{p} {}.", h.trim_end_matches('.'))
+            }
+            _ => val.into(),
+        };
+        content.push_str(&format!("{name} {ttl} IN {kind} {value}\n"));
+    }
+    for (challenge_id, challenge_domain) in reg
+        .items
+        .iter()
+        .filter(|(cid, i)| i.kind == "domains" && zone_root(reg, cid) == id)
+    {
+        let challenge_label = if challenge_id == id {
+            "_acme-challenge".to_owned()
+        } else {
+            format!(
+                "_acme-challenge.{}",
+                s(&challenge_domain.data, "name")
+                    .strip_suffix(&format!(".{zone}"))
+                    .context("Invalid challenge suffix")?
+            )
+        };
+        if let Ok(challenges) =
+            tokio::fs::read_to_string(format!("{ROOT}/challenges/{challenge_id}.json")).await
+        {
+            for value in serde_json::from_str::<Vec<String>>(&challenges)? {
+                ensure!(
+                    value.len() <= 128
+                        && value
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b)),
+                    "Invalid stored ACME token"
+                );
+                content.push_str(&format!("{challenge_label} 60 IN TXT \"{value}\"\n"));
+            }
+        }
+    }
+    Ok(content)
+}
 async fn dns_sync(reg: &Registry) -> Result<()> {
     use std::os::fd::AsRawFd;
     let _lock = tokio::task::spawn_blocking(|| -> Result<std::fs::File> {
@@ -519,6 +690,9 @@ async fn dns_sync(reg: &Registry) -> Result<()> {
         "Invalid public IP"
     );
     for (id, item) in reg.items.iter().filter(|(_, i)| i.kind == "domains") {
+        if zone_root(reg, id) != id {
+            continue;
+        }
         let zone = s(&item.data, "name");
         let file = format!("/etc/bind/cgpanel/{id}.zone");
         let old = tokio::fs::read_to_string(&file).await.unwrap_or_default();
@@ -530,52 +704,7 @@ async fn dns_sync(reg: &Registry) -> Result<()> {
             .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(0);
         let serial = serial.max(previous + 1);
-        let records: Vec<_> = reg
-            .items
-            .values()
-            .filter(|i| i.kind == "dns" && s(&i.data, "domain_id") == id)
-            .collect();
-        let mut content=format!("$ORIGIN {zone}.\n$TTL 300\n@ IN SOA ns1.{zone}. hostmaster.{zone}. ({serial} 3600 900 1209600 300)\n@ IN NS ns1.{zone}.\nns1 IN A {server_ip}\n");
-        if !records
-            .iter()
-            .any(|i| s(&i.data, "name") == "@" && s(&i.data, "type") == "A")
-        {
-            content.push_str(&format!("@ IN A {server_ip}\n"));
-        }
-        for r in records {
-            let name = s(&r.data, "name");
-            let kind = s(&r.data, "type");
-            let val = s(&r.data, "value");
-            ensure!(
-                cgpanel::dns_record(kind, name, val, zone),
-                "Invalid stored DNS record"
-            );
-            let ttl = r.data["ttl"].as_u64().unwrap_or(300).clamp(60, 86400);
-            let value = match kind {
-                "TXT" => format!("\"{val}\""),
-                "CNAME" | "NS" => format!("{}.", val.trim_end_matches('.')),
-                "MX" => {
-                    let (p, h) = val.split_once(' ').unwrap();
-                    format!("{p} {}.", h.trim_end_matches('.'))
-                }
-                _ => val.into(),
-            };
-            content.push_str(&format!("{name} {ttl} IN {kind} {value}\n"));
-        }
-        if let Ok(challenges) =
-            tokio::fs::read_to_string(format!("{ROOT}/challenges/{id}.json")).await
-        {
-            for value in serde_json::from_str::<Vec<String>>(&challenges)? {
-                ensure!(
-                    value.len() <= 128
-                        && value
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b)),
-                    "Invalid stored ACME token"
-                );
-                content.push_str(&format!("_acme-challenge 60 IN TXT \"{value}\"\n"));
-            }
-        }
+        let content = zone_content(reg, id, zone, &server_ip, serial).await?;
         atomic(&file, &content, 0o644).await?;
         run("named-checkzone", &[zone, &file]).await?;
         config.push_str(&format!(
@@ -775,6 +904,7 @@ async fn execute(reg: &mut Registry, mut op: Operation) -> Result<Value> {
         "backup_import" => backup_import::execute(reg, &op).await,
         "budget_status" => resources_agent::status(reg, &op),
         "budget_configure" => resources_agent::set_budget(reg, &op).await,
+        "performance_configure" => performance_agent::configure(reg, &op).await,
         "allocation_configure" => resources_agent::configure(reg, &op).await,
         "services_status" => services_agent::status(reg, &op).await,
         "services_configure" => services_agent::configure(reg, &op).await,
@@ -910,12 +1040,22 @@ async fn execute(reg: &mut Registry, mut op: Operation) -> Result<Value> {
             )
         }
         "create_tenant" => {
+            tokio::fs::create_dir_all("/var/lib/cgpanel-volumes").await?;
+            resources_agent::reserve(reg, &op.tenant, 4096)?;
             tenant(&op.tenant).await?;
+            reg.items.entry(op.tenant.clone()).or_insert(Item {
+                tenant: op.tenant.clone(),
+                kind: "tenant_limits".into(),
+                data: json!({"memory_mb":2048,"cpu_millis":2000,"disk_mb":4096}),
+            });
             Ok(json!({"user":user(&op.tenant)}))
         }
         "create_app" => create_app(reg, &op).await,
         "create_domain" => create_domain(reg, &op).await,
         "create_database" => create_database(reg, &op).await,
+        "monitor_security" => security_agent::status(reg, &op).await,
+        "monitor_email" => security_agent::send_email(reg, &op).await,
+        "database_query" => database_agent::query(reg, &op).await,
         "database_access" => {
             let item = owned(reg, &op, "databases")?.clone();
             let ips = exact_ips(&op.data["allowed_ips"])?;
@@ -1179,6 +1319,14 @@ async fn execute(reg: &mut Registry, mut op: Operation) -> Result<Value> {
                 _ => bail!("Unknown deletion"),
             };
             let item = owned(reg, &op, kind)?.clone();
+            if kind == "domains" {
+                ensure!(
+                    !reg.items.iter().any(|(id, i)| id != &op.id
+                        && i.kind == "domains"
+                        && cgpanel::within_domain(s(&i.data, "name"), s(&item.data, "name"))),
+                    "Remove dependent subdomain mappings before deleting the parent domain"
+                );
+            }
             match kind {
                 "apps" => {
                     services_agent::disable(reg, &op).await?;
@@ -1287,6 +1435,9 @@ async fn main() -> Result<()> {
     // Reapply persisted database filters and block lists after firewall/service restart.
     db_access(&registry).await?;
     block_access(&registry).await?;
+    if registry.items.values().any(|i| i.kind == "domains") {
+        dns_sync(&registry).await?;
+    }
     // Refresh generated vhosts during upgrades so existing domains gain ACME and telemetry routes.
     for (id, item) in registry.items.iter().filter(|(_, i)| i.kind == "domains") {
         tls_agent::render_domain(&registry, id, item).await?;
@@ -1365,6 +1516,8 @@ async fn main() -> Result<()> {
                 Ok(op)
                     if [
                         "telegram_send",
+                        "monitor_email",
+                        "monitor_security",
                         "integration_list",
                         "integration_test",
                         "site_seo",
@@ -1414,5 +1567,62 @@ async fn main() -> Result<()> {
             };
             let _ = writer.write_all(format!("{result}\n").as_bytes()).await;
         });
+    }
+}
+
+#[cfg(test)]
+mod release_tests {
+    use super::*;
+    #[tokio::test]
+    async fn subdomains_share_parent_zone_and_mail_txt_is_valid() {
+        let mut reg = Registry::default();
+        for (id, name) in [
+            ("parent", "example.com"),
+            ("child", "api.example.com"),
+            ("mail", "mail.example.com"),
+        ] {
+            reg.items.insert(
+                id.into(),
+                Item {
+                    tenant: "tenant".into(),
+                    kind: "domains".into(),
+                    data: json!({"name":name}),
+                },
+            );
+        }
+        assert_eq!(zone_root(&reg, "child"), "parent");
+        for (id, kind, name, value) in [
+            ("mx", "MX", "@", "10 mail.example.com"),
+            ("spf", "TXT", "@", "v=spf1 mx -all"),
+            ("dmarc", "TXT", "_dmarc", "v=DMARC1; p=none"),
+        ] {
+            reg.items.insert(
+                id.into(),
+                Item {
+                    tenant: "tenant".into(),
+                    kind: "dns".into(),
+                    data: json!({"domain_id":"parent","type":kind,"name":name,"value":value}),
+                },
+            );
+        }
+        reg.items.insert(
+            "child_txt".into(),
+            Item {
+                tenant: "tenant".into(),
+                kind: "dns".into(),
+                data: json!({"domain_id":"child","type":"TXT","name":"verify","value":"abc"}),
+            },
+        );
+        reg.items.insert("dkim".into(),Item{tenant:"tenant".into(),kind:"dns".into(),data:json!({"domain_id":"parent","type":"TXT","name":"cgp._domainkey","value":format!("v=DKIM1; k=rsa; p={}","a".repeat(360))})});
+        let zone = zone_content(&reg, "parent", "example.com", "192.0.2.10", 2026112001)
+            .await
+            .unwrap();
+        assert!(zone.contains("api IN A 192.0.2.10"));
+        assert!(zone.contains("verify.api 300 IN TXT \"abc\""));
+        assert!(zone.contains("v=DMARC1; p=none"));
+        assert!(zone.contains("\" \""));
+        if let Ok(path) = std::env::var("CGPANEL_DNS_FIXTURE_OUT") {
+            std::fs::write(path, zone).unwrap();
+        }
     }
 }

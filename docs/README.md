@@ -20,3 +20,5 @@ The OpenAPI document and endpoint reference are generated together by `python3 s
 - [Mail hosting](MAIL.md): mailbox setup, TLS, DNS, delivery security and API operations.
 
 - [Version 0.5 workspace guide](V0.5-GUIDE.md): services, budgets, recovery, console, protections and MFA.
+
+- [AI clients, Database Studio, monitoring and performance](V0.6-GUIDE.md)

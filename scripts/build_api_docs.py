@@ -33,13 +33,13 @@ schemas = {
     'Identity': obj({'id': S, 'username': S, 'role': enum('admin', 'user'), 'csrf': {'type': 'string', 'description': 'Empty for bearer authentication.'}}),
     'System': obj({'version': S, 'counts': O, 'events': array(O), 'host': O}),
     'Cron': obj({'schedule': S, 'timezone': S}, ['schedule']),
-    'Monitor': obj({'enabled': B, 'scheme': enum('http', 'https'), 'path': S, 'interval': I, 'telegram_id': S, 'analytics': B, 'clicks': B, 'retention_days': I}, ['scheme', 'path']),
+    'Monitor': obj({'enabled': B, 'scheme': enum('http', 'https'), 'path': S, 'interval': I, 'telegram_id': S, 'email_from':S, 'email_to':S, 'security':B, 'request_threshold':I, 'analytics': B, 'clicks': B, 'retention_days': I}, ['scheme', 'path']),
     'BackupPlan': obj({'app_id': S, 'database_ids': IDS, 'destinations': IDS, 'schedule': S, 'timezone': S, 'quiesce': B, 'retention': I, 'enabled': B}, ['app_id', 'schedule']),
     'Job': obj({'id': S, 'owner': S, 'kind': S, 'target': S, 'status': enum('queued', 'running', 'succeeded', 'failed', 'interrupted'), 'result': O, 'error': S, 'created': I, 'started': {'type': 'integer', 'nullable': True}, 'finished': {'type': 'integer', 'nullable': True}}),
     'Queued': obj({'id': S, 'status': {'type': 'string', 'enum': ['queued']}}),
 }
 resources = {
-    'apps': ('Application', {'runtime': enum('python','php','node','java','rust','static'), 'mode': enum('web','worker'), 'command': S, 'env': {'type': 'object', 'additionalProperties': S}}, ['runtime','mode'], {'name':'website','runtime':'php','mode':'web','command':'','env':{}}),
+    'apps': ('Application', {'runtime': enum('python','php','node','java','rust','static'), 'mode': enum('web','worker','private'), 'command': S, 'env': {'type': 'object', 'additionalProperties': S}, 'container_port':I, 'memory_mb':I, 'cpu_millis':I, 'disk_mb':I}, ['runtime','mode'], {'name':'website','runtime':'php','mode':'web','command':'','env':{}}),
     'domains': ('Domain', {'app_id': S}, [], {'name':'example.com','app_id':'APP_ID'}),
     'databases': ('Database', {'engine': enum('mysql','postgresql'), 'allowed_ips': IDS}, ['engine'], {'name':'website','engine':'mysql','allowed_ips':[]}),
     'dns': ('DnsRecord', {'domain_id':S,'type':enum('A','AAAA','CNAME','MX','TXT','NS'),'value':S,'ttl':I}, ['domain_id','type','value'], {'name':'www','domain_id':'DOMAIN_ID','type':'A','value':'203.0.113.20','ttl':300}),
@@ -166,6 +166,17 @@ endpoint('/api/v5/mail','get','Mail hosting status','Mail','Tenants see their do
 endpoint('/api/v5/mail/server','post','Configure mail server','Administration','Administrator only. Set this VPS hostname, matching certificate domain ID, and public port state. Empty certificate_domain selects the development self-signed certificate.',obj({'hostname':S,'certificate_domain':S,'enabled':B},['hostname','enabled']),{'hostname':'mail.example.com','certificate_domain':'DOMAIN_ID','enabled':True})
 endpoint('/api/v5/mail/domains/{id}','post','Enable domain mail','Mail','Owned domain or administrator. Enable generates DKIM keys; disable requires all its mailboxes to be disabled.',obj({'enabled':B},['enabled']),{'enabled':True})
 endpoint('/api/v5/mail/mailboxes','post','Create or update mailbox','Mail','Owned mail-enabled domain. Omit id to create; include id to update. Blank password on update preserves current. Quota 64–102400 MiB, maximum 30 mailboxes per tenant. Disable preserves messages.',obj({'id':S,'domain_id':S,'local':S,'password':S,'quota_mb':I,'enabled':B},['domain_id','local','quota_mb','enabled']),{'domain_id':'DOMAIN_ID','local':'hello','password':'PRIVATE_PASSWORD','quota_mb':512,'enabled':True})
+
+endpoint('/api/mcp/tokens','get','List MCP credentials','MCP','Session only. Own credential metadata; secrets never returned.',session=True)
+endpoint('/api/mcp/tokens','post','Create MCP credential','MCP','Session + CSRF. Own role boundaries; token is returned once. Does not create an administrator API key.',obj({'name':S,'scope':enum('read','manage'),'expires_days':I,'allowed_ips':IDS},['name']),session=True)
+endpoint('/api/mcp/tokens/{id}','delete','Revoke MCP credential','MCP','Session + CSRF. Own credentials only.',session=True)
+endpoint('/api/mcp/authorize','post','Consent to OAuth client','MCP','Session + CSRF. Exact registered redirect and PKCE S256 required. User consent must be explicit.',O,session=True)
+endpoint('/api/login-challenge','get','Request login challenge','Authentication','Public. Returns enabled:false when local CAPTCHA is off; otherwise an IP-bound one-use challenge.',public=True)
+endpoint('/api/login-security','get','Read panel login policy','Administration','Administrator only; counters survive restarts.')
+endpoint('/api/login-security','post','Set panel login policy','Administration','Administrator browser session + CSRF only.',obj({'captcha':B,'attempts':I,'window_seconds':I},['attempts','window_seconds']),session=True)
+endpoint('/api/databases/{id}/query','post','Execute Database Studio SQL','Databases','Owned database, using its isolated role. One statement, 15-second engine timeout, 500 rows/1 MiB result limit. SQL can change data.',obj({'sql':S},['sql']))
+endpoint('/api/v5/apps/{id}/performance','post','Configure public page cache','Applications','Owned web application. Eligible requests have no cookies/authorization and origin explicitly marks response public.',obj({'cache':B},['cache']))
+endpoint('/api/v2/monitor/{id}/security','get','Read security signals','Monitoring','Owned domain. Sampled traffic and account database login failures; journal coverage may be unavailable.')
 
 contract={'openapi':'3.0.3','info':{'title':'CGPanel Administrator and Management API','version':VERSION,'description':'Community alpha. Session + CSRF or administrator bearer tokens. See docs/API.md for operational boundaries.','license':{'name':'AGPL-3.0-or-later','url':'https://www.gnu.org/licenses/agpl-3.0.html'}},'servers':[{'url':'/','description':'Your panel HTTPS origin, normally port 2083'}],'paths':paths,'components':{'securitySchemes':{'AdminBearer':{'type':'http','scheme':'bearer','description':'Revocable cgp_ administrator token. read scope permits GET/HEAD only; admin permits mutations except session-only credential operations.'},'SessionCookie':{'type':'apiKey','in':'cookie','name':'cg_session'},'CsrfHeader':{'type':'apiKey','in':'header','name':'x-csrf-token'}},'schemas':schemas},'externalDocs':{'url':'https://github.com/ItzGlace/CGPanel/blob/main/docs/API.md'}}
 

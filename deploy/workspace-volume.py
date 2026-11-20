@@ -9,10 +9,16 @@ import fcntl, json, os, pathlib, re, shutil, subprocess, sys, time
 def run(*args):
     return subprocess.run(args,check=True,capture_output=True,text=True,timeout=300).stdout.strip()
 
+def require_capacity(base, growth_mb):
+    disk=shutil.disk_usage(base)
+    reserve=max(2*1024**3,disk.total//10)
+    if growth_mb*1024**2+reserve>disk.free:
+        raise ValueError('Insufficient server disk: keep 10% or 2 GiB free for system recovery')
+
 def main():
     assert os.geteuid()==0
     tenant,app,size=sys.argv[1:4];size=int(size)
-    if not all(re.fullmatch('[a-f0-9]{32}',s) for s in (tenant,app)) or not 128<=size<=1048576:raise ValueError('Invalid volume request')
+    if not all(re.fullmatch('[a-f0-9]{32}',s) for s in (tenant,app)) or not 128<=size<=1073741824:raise ValueError('Invalid volume request')
     base=pathlib.Path('/var/lib/cgpanel-volumes');base.mkdir(mode=0o700,exist_ok=True)
     with (base/'lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
@@ -30,11 +36,12 @@ def main():
             backing=run('losetup','-n','-O','BACK-FILE',device)
             if pathlib.Path(backing)!=image:raise ValueError('Unexpected workspace mount source')
             if size>info['size_mb']:
+                require_capacity(base,size-info['size_mb'])
                 run('fallocate','-l',str(size*1024*1024),str(image));run('losetup','-c',device);run('resize2fs',device)
                 info['size_mb']=size;record.write_text(json.dumps(info));record.chmod(0o600)
             print(json.dumps(info));return
         if image.exists():raise ValueError('Unfinished volume migration exists; inspect the recovery files before retrying')
-        if shutil.disk_usage(base).free<(size+256)*1024*1024:raise ValueError('Insufficient server disk space for this allocation')
+        require_capacity(base,size+256)
         # Services must be stopped by the broker before calling this helper.
         # Lock out new file-manager/SFTP opens while root copies the old directory.
         os.chown(folder,0,0);folder.chmod(0o700)

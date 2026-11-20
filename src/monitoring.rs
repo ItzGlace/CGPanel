@@ -6,6 +6,7 @@ pub fn routes() -> Router<App> {
     Router::new()
         .route("/v2/monitor/{id}", get(status).post(configure))
         .route("/v2/analytics/{id}", get(analytics))
+        .route("/v2/monitor/{id}/security", get(security))
 }
 pub fn public_routes() -> Router<App> {
     Router::new()
@@ -45,7 +46,7 @@ fn configuration(value: &Value) -> Result<Value, Error> {
         return Err(bad("Use a page path without a query string or fragment"));
     }
     Ok(
-        json!({"scheme":scheme,"path":path,"interval":value["interval"].as_i64().unwrap_or(60).clamp(60,3600),"telegram_id":text(value,"telegram_id"),"analytics":value["analytics"]==true,"clicks":value["clicks"]==true,"retention_days":value["retention_days"].as_i64().unwrap_or(30).clamp(1,30)}),
+        json!({"scheme":scheme,"path":path,"interval":value["interval"].as_i64().unwrap_or(60).clamp(60,3600),"telegram_id":text(value,"telegram_id"),"email_from":text(value,"email_from"),"email_to":text(value,"email_to"),"security":value["security"]==true,"request_threshold":value["request_threshold"].as_u64().unwrap_or(1000).clamp(100,2000),"analytics":value["analytics"]==true,"clicks":value["clicks"]==true,"retention_days":value["retention_days"].as_i64().unwrap_or(30).clamp(1,30)}),
     )
 }
 async fn configure(
@@ -73,9 +74,26 @@ async fn configure(
             return Err(bad("Choose this account's Telegram integration"));
         }
     }
+    let from = text(&config, "email_from");
+    let to = text(&config, "email_to");
+    let address = |v: &str| {
+        v.len() <= 254
+            && v.split_once('@').is_some_and(|(local, domain)| {
+                !local.is_empty()
+                    && local
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
+                    && cgpanel::domain(domain)
+            })
+    };
+    if (!from.is_empty() || !to.is_empty()) && (!address(from) || !address(to)) {
+        return Err(bad(
+            "Supply both a valid sender mailbox and recipient, or leave both blank",
+        ));
+    }
     let now = chrono::Utc::now().timestamp();
     sqlx::query("INSERT INTO monitor_settings(domain_id,owner,enabled,config,next_check,analytics_key,salt) VALUES(?,?,?,?,?,?,?) ON CONFLICT(domain_id) DO UPDATE SET enabled=excluded.enabled,config=excluded.config,next_check=excluded.next_check")
-        .bind(&rid).bind(&resource.owner).bind(value["enabled"]==true).bind(config.to_string()).bind(now).bind(id()).bind(format!("{}{}",id(),id())).execute(&app.db).await?;
+        .bind(&rid).bind(&resource.owner).bind(value["enabled"]==true || config["security"]==true).bind(config.to_string()).bind(now).bind(id()).bind(format!("{}{}",id(),id())).execute(&app.db).await?;
     audit(&app, &user.id, "monitor:configure", &rid).await;
     Ok(Json(json!({"saved":true})))
 }
@@ -132,7 +150,9 @@ async fn collect(
         return Ok(StatusCode::NO_CONTENT);
     }
     let kind = text(&value, "kind");
-    if !["view", "click"].contains(&kind) || (kind == "click" && config["clicks"] != true) {
+    if !["view", "click", "move"].contains(&kind)
+        || (["click", "move"].contains(&kind) && config["clicks"] != true)
+    {
         return Err(bad("Event is not enabled"));
     }
     let path = text(&value, "path").split(['?', '#']).next().unwrap_or("");
@@ -200,7 +220,7 @@ async fn collect(
         .bind(if value["viewport"]=="mobile" {"mobile"} else {"desktop"}).bind(target).execute(&app.db).await?;
     Ok(StatusCode::NO_CONTENT)
 }
-async fn analytics(
+pub(super) async fn analytics(
     State(app): State<App>,
     Extension(user): Extension<Identity>,
     Path(rid): Path<String>,
@@ -210,7 +230,7 @@ async fn analytics(
     let since = chrono::Utc::now().timestamp() - 30 * 86400;
     let daily = sqlx::query("SELECT day,count(*) views,count(DISTINCT visitor) unique_ips FROM analytics_events WHERE domain_id=? AND kind='view' AND at>=? GROUP BY day ORDER BY day")
         .bind(&rid).bind(since).fetch_all(&app.db).await?;
-    let pages = sqlx::query("SELECT path,count(*) views,count(DISTINCT visitor) unique_ip_days FROM analytics_events WHERE domain_id=? AND kind='view' AND at>=? GROUP BY path ORDER BY views DESC LIMIT 30")
+    let pages = sqlx::query("SELECT path,count(*) views,count(DISTINCT visitor) unique_ip_days FROM analytics_events WHERE domain_id=? AND kind='view' AND at>=? GROUP BY path ORDER BY views DESC LIMIT 1000")
         .bind(&rid).bind(since).fetch_all(&app.db).await?;
     let page = query
         .get("path")
@@ -221,8 +241,13 @@ async fn analytics(
     } else {
         "desktop"
     };
-    let clicks=sqlx::query("SELECT x/100 col,y/50 row,count(*) count FROM analytics_events WHERE domain_id=? AND path=? AND kind='click' AND viewport=? AND at>=? GROUP BY col,row")
-        .bind(&rid).bind(&page).bind(viewport).bind(since).fetch_all(&app.db).await?;
+    let event_kind = if query.get("kind").is_some_and(|v| v == "move") {
+        "move"
+    } else {
+        "click"
+    };
+    let clicks=sqlx::query("SELECT x/100 col,y/50 row,count(*) count FROM analytics_events WHERE domain_id=? AND path=? AND kind=? AND viewport=? AND at>=? GROUP BY col,row")
+        .bind(&rid).bind(&page).bind(event_kind).bind(viewport).bind(since).fetch_all(&app.db).await?;
     let targets=sqlx::query("SELECT target,count(*) count FROM analytics_events WHERE domain_id=? AND path=? AND kind='click' AND at>=? GROUP BY target ORDER BY count DESC LIMIT 15")
         .bind(&rid).bind(&page).bind(since).fetch_all(&app.db).await?;
     let referrers=sqlx::query("SELECT referrer,count(*) count FROM analytics_events WHERE domain_id=? AND kind='view' AND at>=? GROUP BY referrer ORDER BY count DESC LIMIT 15")
@@ -230,7 +255,7 @@ async fn analytics(
     Ok(Json(
         json!({"daily":daily.iter().map(|r|json!({"day":r.get::<String,_>("day"),"views":r.get::<i64,_>("views"),"unique_ips":r.get::<i64,_>("unique_ips")})).collect::<Vec<_>>(),
         "pages":pages.iter().map(|r|json!({"path":r.get::<String,_>("path"),"views":r.get::<i64,_>("views"),"unique_ip_days":r.get::<i64,_>("unique_ip_days")})).collect::<Vec<_>>(),
-        "heatmap":{"path":page,"viewport":viewport,"columns":10,"rows":20,"cells":clicks.iter().map(|r|json!({"col":r.get::<i64,_>("col"),"row":r.get::<i64,_>("row"),"count":r.get::<i64,_>("count")})).collect::<Vec<_>>()},
+        "heatmap":{"path":page,"viewport":viewport,"kind":event_kind,"columns":10,"rows":20,"cells":clicks.iter().map(|r|json!({"col":r.get::<i64,_>("col"),"row":r.get::<i64,_>("row"),"count":r.get::<i64,_>("count")})).collect::<Vec<_>>()},
         "targets":targets.iter().map(|r|json!({"label":r.get::<String,_>("target"),"count":r.get::<i64,_>("count")})).collect::<Vec<_>>(),
         "referrers":referrers.iter().map(|r|json!({"host":r.get::<String,_>("referrer"),"count":r.get::<i64,_>("count")})).collect::<Vec<_>>() }),
     ))
@@ -291,17 +316,23 @@ async fn tick(app: &App) -> Result<(), Error> {
             .execute(&mut *transaction)
             .await?;
         let alert = text(&config, "telegram_id");
-        if !alert.is_empty() && state != old && (state == "down" || old == "down") {
+        if state != old && (state == "down" || old == "down") {
             let message = format!(
                 "CGPanel: {} is {}. HTTP {}. Checked from your hosting server.",
                 row.get::<String, _>("name"),
                 state.to_uppercase(),
                 status
             );
-            sqlx::query("INSERT INTO jobs(id,owner,kind,target,payload,created) VALUES(?,?,'monitor_alert',?,?,?)")
+            enqueue_email(&mut transaction, &owner, &rid, &config, &message, now).await?;
+            if !alert.is_empty() {
+                sqlx::query("INSERT INTO jobs(id,owner,kind,target,payload,created) VALUES(?,?,'monitor_alert',?,?,?)")
                 .bind(id()).bind(&owner).bind(alert).bind(json!({"message":message}).to_string()).bind(now).execute(&mut *transaction).await?;
+            }
         }
         transaction.commit().await?;
+        if config["security"] == true {
+            security_alert(app, &owner, &rid, &config, now).await?;
+        }
     }
     sqlx::query("DELETE FROM monitor_checks WHERE checked<?")
         .bind(now - 30 * 86400)
@@ -309,5 +340,75 @@ async fn tick(app: &App) -> Result<(), Error> {
         .await?;
     sqlx::query("DELETE FROM analytics_events WHERE at<? OR at < ? - 86400*coalesce((SELECT json_extract(config,'$.retention_days') FROM monitor_settings WHERE domain_id=analytics_events.domain_id),30)")
         .bind(now-30*86400).bind(now).execute(&app.db).await?;
+    Ok(())
+}
+
+async fn enqueue_email(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    owner: &str,
+    rid: &str,
+    config: &Value,
+    message: &str,
+    now: i64,
+) -> Result<(), Error> {
+    if !text(config, "email_from").is_empty() && !text(config, "email_to").is_empty() {
+        sqlx::query("INSERT INTO jobs(id,owner,kind,target,payload,created) VALUES(?,?,'monitor_email',?,?,?)").bind(id()).bind(owner).bind(rid).bind(json!({"from":text(config,"email_from"),"to":text(config,"email_to"),"message":message}).to_string()).bind(now).execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+async fn security(
+    State(app): State<App>,
+    Extension(user): Extension<Identity>,
+    Path(rid): Path<String>,
+) -> Api<Value> {
+    let r = domain_resource(&app, &user, &rid).await?;
+    Ok(Json(
+        host(&app, &user, "monitor_security", &r.owner, &rid, json!({})).await?,
+    ))
+}
+async fn security_alert(
+    app: &App,
+    owner: &str,
+    rid: &str,
+    config: &Value,
+    now: i64,
+) -> Result<(), Error> {
+    let stats = agent_call(
+        &app.agent,
+        Operation {
+            action: "monitor_security".into(),
+            tenant: owner.into(),
+            id: rid.into(),
+            data: json!({}),
+        },
+    )
+    .await
+    .map_err(|e| bad(e.to_string()))?;
+    let requests = stats["samples"].as_u64().unwrap_or(0);
+    let rejected = stats["rejected"].as_u64().unwrap_or(0);
+    let database = stats["database_auth_failures"].as_u64().unwrap_or(0);
+    if requests < config["request_threshold"].as_u64().unwrap_or(1000)
+        && rejected < 100
+        && database < 5
+    {
+        return Ok(());
+    }
+    let mut tx = app.db.begin().await?;
+    let previous: Option<i64> =
+        sqlx::query_scalar("SELECT last_sent FROM security_alerts WHERE domain_id=?")
+            .bind(rid)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if previous.is_some_and(|t| now - t < 3600) {
+        return Ok(());
+    }
+    let message=format!("CGPanel suspected abuse signal: {requests} sampled requests, {rejected} rejected requests, {database} database authentication failures in five minutes. Review Monitoring and Website protection; this is not proof of a DDoS attack or unauthorized data access.");
+    enqueue_email(&mut tx, owner, rid, config, &message, now).await?;
+    let telegram = text(config, "telegram_id");
+    if !telegram.is_empty() {
+        sqlx::query("INSERT INTO jobs(id,owner,kind,target,payload,created) VALUES(?,?,'monitor_alert',?,?,?)").bind(id()).bind(owner).bind(telegram).bind(json!({"message":message}).to_string()).bind(now).execute(&mut *tx).await?;
+    }
+    sqlx::query("INSERT INTO security_alerts VALUES(?,?) ON CONFLICT(domain_id) DO UPDATE SET last_sent=excluded.last_sent").bind(rid).bind(now).execute(&mut *tx).await?;
+    tx.commit().await?;
     Ok(())
 }

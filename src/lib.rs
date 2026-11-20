@@ -30,6 +30,7 @@ pub fn application_input(value: &Value) -> Value {
         "memory_mb",
         "cpu_millis",
         "disk_mb",
+        "container_port",
     ];
     Value::Object(
         value
@@ -108,10 +109,13 @@ pub fn dns_record(kind: &str, name: &str, value: &str, zone: &str) -> bool {
         return false;
     }
     if value.is_empty()
-        || value.len() > 250
-        || value
-            .chars()
-            .any(|c| c.is_control() || c == '"' || c == '\\' || c == ';' || c == '(' || c == ')')
+        || value.len() > if kind == "TXT" { 4096 } else { 250 }
+        || value.chars().any(|c| {
+            c.is_control()
+                || c == '"'
+                || c == '\\'
+                || (kind != "TXT" && (c == ';' || c == '(' || c == ')'))
+        })
     {
         return false;
     }
@@ -130,6 +134,19 @@ pub fn dns_record(kind: &str, name: &str, value: &str, zone: &str) -> bool {
     }
 }
 
+pub fn dns_txt(value: &str) -> String {
+    let mut chunks = Vec::new();
+    let mut chunk = String::new();
+    for c in value.chars() {
+        if chunk.len() + c.len_utf8() > 255 {
+            chunks.push(format!("\"{chunk}\""));
+            chunk.clear();
+        }
+        chunk.push(c);
+    }
+    chunks.push(format!("\"{chunk}\""));
+    chunks.join(" ")
+}
 pub async fn agent_call(socket: &str, op: Operation) -> Result<Value> {
     agent_call_timeout(socket, op, 360).await
 }

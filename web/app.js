@@ -23,6 +23,9 @@ let me,
   pending = false;
 const tools4 = workspaceTools({api,esc,glyph,toast,getCurrent:()=>current,getMe:()=>me});
 const pages = {
+  mcp: ["AI connections · MCP", "Connect Claude, ChatGPT and compatible clients securely.", "terminal"],
+  "login-security": ["Panel login security", "Basic bot challenges and persistent login limits.", "shield-check"],
+  "database-studio": ["Database Studio", "Browse tables and execute SQL with database-specific privileges.", "database"],
   mail: ["Mail hosting", "Mailboxes, delivery security, and domain setup.", "mail"],
   services: ["Services", "Manage secure file-transfer access for each workspace.", "network"],
   "program-logs": ["Program logs", "Application output and errors, with automatic refresh.", "logs"],
@@ -179,7 +182,9 @@ function showLogin() {
   me = null;
   $("#panel").hidden = true;
   $("#login-screen").hidden = false;
+  loginChallenge().catch(e=>$("#login-error").textContent=e.message);
 }
+async function loginChallenge(){const config=await api('/login-challenge');$('#login-challenge').innerHTML=config.enabled?`<label class="grid gap-2 text-xs">${esc(config.question)}<input name="answer" required inputmode="numeric" autocomplete="off" class="rounded-lg border border-slate-200 p-3"><input type="hidden" name="challenge" value="${esc(config.nonce)}"></label>`:'';}
 async function boot() {
   try {
     me = await api("/me");
@@ -190,7 +195,7 @@ async function boot() {
     $("#panel").hidden = false;
     nav();
     await render();
-    if(!localStorage.getItem("cgp-tour-v5-"+me.id)) startTour();
+    if(current==="home"&&!localStorage.getItem("cgp-tour-v5-"+me.id)) startTour();
   } catch (e) {
     showLogin();
   }
@@ -206,6 +211,7 @@ $("#login").addEventListener("submit", async (e) => {
     await boot();
   } catch (e) {
     $("#login-error").textContent = e.message;
+    await loginChallenge().catch(()=>{});
   } finally {
     b.disabled = false;
   }
@@ -216,6 +222,8 @@ function nav() {
     "apps",
     "domains",
     "databases",
+    "database-studio",
+    "mcp",
     "dns",
     "files",
     "ide",
@@ -233,7 +241,7 @@ function nav() {
     "protection",
     "captcha",
     "security",
-    ...(me.role === "admin" ? ["users", "blocks", "admin-api", "updates"] : []),
+    ...(me.role === "admin" ? ["users", "blocks", "admin-api", "updates", "login-security"] : []),
     "audit",
     "docs",
   ];
@@ -304,6 +312,9 @@ async function render() {
     if (epoch !== renderEpoch) return;
     if (current === "home") await dashboard();
     else if (["protection","captcha"].includes(current)) await protectionPage();
+    else if (current === "mcp") await mcpPage();
+    else if (current === "login-security") await loginSecurityPage();
+    else if (current === "database-studio") await databaseStudio();
     else if (current === "security") security();
     else if (current === "audit") await auditPage();
     else if (["files","editor","ide","runtimes","updates"].includes(current)) await tools4.render(current);
@@ -334,7 +345,7 @@ async function render() {
       `<div class="info-box mb-5 rounded-xl border px-5 py-4 text-xs leading-6 warning-box border-amber-200/60 bg-amber-50/60 text-amber-900/65">${esc(e.message)}</div>`;
   }
 }
-function budgetSummary(budget){return '<div class="mb-5 grid grid-cols-3 gap-3">'+[['memory_mb','RAM','MiB',1],['cpu_millis','CPU','cores',1000],['disk_mb','Disk','MiB',1]].map(([key,label,unit,scale])=>'<div class="rounded-xl border border-emerald-100 bg-white/70 p-4"><p class="text-xs text-slate-500">'+label+' available</p><p class="mt-2 text-lg font-semibold">'+(budget.free[key]/scale)+' <span class="text-xs font-normal">'+unit+'</span></p><p class="mt-1 text-[10px] text-slate-400">'+(budget.allocated[key]/scale)+' / '+(budget.total[key]/scale)+' allocated</p></div>').join('')+'</div>'}
+function budgetSummary(budget){return (budget.server_storage?.pressure?'<p role="alert" class="mb-4 rounded-xl bg-amber-50 p-4 text-xs text-amber-900">Server storage reserve is low. Ask the administrator to free space before growing workspaces.</p>':'')+'<div class="mb-5 grid grid-cols-3 gap-3">'+[['memory_mb','RAM','MiB',1],['cpu_millis','CPU','cores',1000],['disk_mb','Disk','MiB',1]].map(([key,label,unit,scale])=>'<div class="rounded-xl border border-emerald-100 bg-white/70 p-4"><p class="text-xs text-slate-500">'+label+' available</p><p class="mt-2 text-lg font-semibold">'+(budget.free[key]/scale)+' <span class="text-xs font-normal">'+unit+'</span></p><p class="mt-1 text-[10px] text-slate-400">'+(budget.allocated[key]/scale)+' / '+(budget.total[key]/scale)+' allocated</p></div>').join('')+'</div>'}
 async function editBudget(uid){const budget=await api('/v5/users/'+uid+'/budget');modal('Account resource budget',budgetSummary(budget)+input('memory_mb','Total RAM (MiB)','number','Includes running IDE reservations.',budget.total.memory_mb)+input('cpu_millis','Total CPU (millicores)','number','1000 = one CPU core.',budget.total.cpu_millis)+input('disk_mb','Total workspace disk (MiB)','number',budget.disk_scope,budget.total.disk_mb),'Save budget',async value=>{await api('/v5/users/'+uid+'/budget','POST',Object.fromEntries(Object.entries(value).map(([k,v])=>[k,Number(v)])));$('#dialog').close();toast('Account resource budget saved.')})}
 document.addEventListener('click',e=>{const button=e.target.closest('[data-budget]');if(button)editBudget(button.dataset.budget).catch(e=>toast(e.message))});
 async function servicesPage(){
@@ -359,14 +370,15 @@ async function protectionPage(){
   const domains=await api('/resources/domains');
   if(!domains.length){$('#content').innerHTML='<p class="rounded-xl bg-white/70 p-8 text-sm text-slate-500">Add an assigned domain to configure website protection.</p>';return}
   const chosen=sessionStorage.getItem('cgp-protection-domain');const domain=domains.find(d=>d.id===chosen)||domains[0];
-  const [config,traffic]=await Promise.all([api('/v5/protection/'+domain.id),api('/v5/protection/'+domain.id+'/traffic')]);
-  const pick=(name,label,options)=>select(name,label,options.map(([value,title])=>[value,title]),config[name]);
+  const [config,traffic]=await Promise.all([api('/v5/protection/'+domain.id),api('/v5/protection/'+domain.id+'/traffic').catch(error=>({note:'Traffic statistics unavailable: '+error.message}))]);
+  const pick=(name,label,options)=>select(name,label,options);
   const providers=[['off','Disabled'],['local','Local arithmetic challenge'],['turnstile','Cloudflare Turnstile'],['hcaptcha','hCaptcha'],['recaptcha','Google reCAPTCHA v2 checkbox']];
   $('#content').innerHTML='<select id="protection-domain" class="mb-5 rounded-xl border border-slate-200 bg-white/80 p-3 text-sm">'+domains.map(d=>'<option value="'+d.id+'" '+(d.id===domain.id?'selected':'')+'>'+esc(d.name)+'</option>').join('')+'</select><div class="grid gap-6 xl:grid-cols-2"><section class="rounded-2xl border border-white/80 bg-white/75 p-6"><h2 class="mb-5 text-lg font-semibold">'+(current==='captcha'?'Visitor verification':'Request protection')+'</h2><form id="protection-form" class="space-y-4">'+
     (current==='captcha'?pick('captcha','Provider',providers)+input('site_key','Public site key','text','Not needed for the local challenge.',config.site_key||'')+input('secret','Provider secret','password',config.secret_set?'A secret is saved. Leave blank to retain it.':'Stored on the server, never sent to visitors.')+'<p class="rounded-lg bg-amber-50 p-4 text-xs leading-6 text-amber-900">When enabled, visitors must verify before accessing the website. API clients, webhooks, and crawlers cannot solve browser challenges. Leave this disabled for public APIs. Local arithmetic is a basic obstacle; advanced bots can solve it.</p>':
     input('requests_per_second','Requests per second per IP','number','Burst allowance: 40 requests.',config.requests_per_second)+input('connections','Concurrent connections per IP','number','',config.connections)+pick('waf','OWASP Core Rule Set WAF',[['off','Off'],['detect','Detect and log'],['enforce','Block matching requests']])+pick('crawlers','Crawler policy',[['allow','Allow crawlers'],['block_ai','Block known AI user agents'],['block_all','Block common crawler user agents']])+'<label class="flex items-center gap-3 text-sm"><input name="sitemap" type="checkbox" '+(config.sitemap?'checked':'')+'> Publish a sitemap</label>'+'<label class="flex items-center gap-3 text-sm"><input name="sitemap_auto" type="checkbox" '+(config.sitemap_auto?'checked':'')+'> Automatically include observed page paths</label><p class="text-xs text-slate-500">Automatic mapping uses up to 1,000 paths seen by your analytics tracker. Enable only if tracked pages are public; private route names would otherwise be published. Query strings are excluded.</p>'+textarea('sitemap_paths','Sitemap paths','One public path per line. Publishing replaces the panel-served /robots.txt and /sitemap.xml.',(config.sitemap_paths||['/']).join('\n'))+'<p class="text-xs leading-6 text-slate-500">Crawler rules match declared user agents and publish robots.txt. Bots can disguise themselves or ignore robots.txt. Start the WAF in detection mode and check your application before enabling blocking.</p>')+
     '<button class="rounded-xl bg-forest px-5 py-3 text-sm text-white">Save protection</button><p id="protection-result" class="text-xs text-emerald-700" role="status"></p></form></section><section class="rounded-2xl border border-white/80 bg-white/75 p-6"><h2 class="text-lg font-semibold">Recent traffic</h2><div class="my-5 grid grid-cols-3 gap-3">'+[['Requests',traffic.samples||0],['Rejected',traffic.rejected||0],['Server errors',traffic.server_errors||0]].map(([label,value])=>'<div class="rounded-xl bg-emerald-50 p-4"><p class="text-xs text-slate-500">'+label+'</p><p class="mt-2 text-2xl font-semibold">'+value+'</p></div>').join('')+'</div><p class="mb-5 text-xs leading-6 text-slate-500">'+esc(traffic.note)+'</p><div class="space-y-2">'+(traffic.sources||[]).map(r=>'<div class="flex flex-wrap justify-between gap-3 rounded-lg '+(r.unusual?'bg-amber-50':'bg-slate-50')+' p-3 text-xs"><span>'+esc(r.ip)+'</span><span>'+r.requests+' requests · '+r.rejected+' rejected'+(r.unusual?' · Investigate':'')+'</span></div>').join('')+'</div><p class="mt-6 text-xs leading-6 text-slate-500">These controls reduce application abuse. Attacks that saturate the network connection require upstream mitigation.</p></section></div>';
-  // select() is shared with older forms; assign the actual stored selection explicitly.
+  for(const name of ['site_key','secret']){const field=$('#protection-form [name="'+name+'"]');if(field)field.required=false;}
+  // Apply saved selections.
   for(const key of ['captcha','waf','crawlers']){const field=$('#protection-form [name="'+key+'"]');if(field)field.value=config[key]}
   $('#protection-domain').onchange=e=>{sessionStorage.setItem('cgp-protection-domain',e.target.value);protectionPage().catch(e=>toast(e.message))};
   $('#protection-form').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const form=Object.fromEntries(new FormData(e.target));const next={...config,...form};delete next.secret_set;if(current==='protection'){next.requests_per_second=Number(form.requests_per_second);next.connections=Number(form.connections);next.sitemap=!!form.sitemap;next.sitemap_auto=!!form.sitemap_auto;next.sitemap_paths=(form.sitemap_paths||'').split('\n').map(s=>s.trim()).filter(Boolean)}await api('/v5/protection/'+domain.id,'POST',next);$('#protection-result').textContent='Protection saved. Existing visitor passes have been revoked.'}catch(error){toast(error.message)}finally{button.disabled=false}};
@@ -505,13 +517,14 @@ function empty(kind) {
 }
 async function resourcePage(kind) {
   const rows = await load(kind);
+  if(kind==='domains') {const parent=r=>rows.filter(p=>p.owner===r.owner&&r.name.endsWith('.'+p.name)).sort((a,b)=>a.name.length-b.name.length)[0];rows.sort((a,b)=>(parent(a)?.name||a.name).localeCompare(parent(b)?.name||b.name)||a.name.length-b.name.length);for(const row of rows)row.parent=parent(row)?.name;}
   const notices = {
     domains:
       "Administrators assign a domain to an account. Tenants can then create subdomains within their assigned domains. Point DNS to this server before requesting a certificate.",
     databases:
       "Credentials are shown once at creation. External database connections require an exact IP allowlist and TLS. For local applications, use an approved reachable address or an SSH tunnel; container localhost is separate from host localhost.",
     dns: "Changes update the local authoritative DNS service. Delegate your domain at its registrar to use this server’s nameserver, including glue records when needed.",
-    apps: "Applications use 512 MB RAM, 1 CPU, and up to 128 processes each. Web applications listen on port 8080. Workers support polling Telegram bots and background jobs.",
+    apps: "Default allocation: 512 MiB RAM, 1 CPU and 128 processes. Use Resources to assign RAM, multiple CPU cores and disk within your account budget. Web applications can listen on your chosen container port, including 80/443; private services have no public listener. Workers run bots and background jobs.",
     backups:
       "Backups contain application files. Database dumps, off-server copies, and automatic retention are not included. Restoring stops and restarts the linked application.",
     schedules:
@@ -542,12 +555,13 @@ async function resourcePage(kind) {
       let actions = [];
       if (kind === "apps") {
         cells = [
-          `<b>${esc(r.name)}</b><small>${r.id.slice(0, 12)}</small>`,
+          `<b>${esc(r.name)}</b><small>${r.id.slice(0, 12)}</small>${d.mode==="private"?`<small>Private service · cgp_${r.id}:${d.container_port||8080}</small>`:""}`,
           `<span class="pill inline-flex items-center rounded-md border border-emerald-100 bg-emerald-50/70 px-2 py-1 text-[10px] font-medium text-emerald-700 blue border-sky-100 bg-sky-50/70 text-sky-700">${esc(d.runtime)}</span> <span class="pill inline-flex items-center rounded-md border border-emerald-100 bg-emerald-50/70 px-2 py-1 text-[10px] font-medium text-emerald-700">${esc(d.mode)}</span>`,
           esc(ownerName(r.owner)),
         ];
         actions = [
           ["limits", "Resources"],
+          ["performance", "Performance"],
           ["inspect", "Status"],
           ["start", "Start"],
           ["stop", "Stop"],
@@ -558,7 +572,7 @@ async function resourcePage(kind) {
       }
       if (kind === "domains") {
         cells = [
-          `<b>${esc(r.name)}</b>`,
+          `<b>${r.parent?"↳ ":""}${esc(r.name)}</b><small>${r.parent?"Subdomain of "+esc(r.parent):"Assigned domain"}</small>`,
           esc(d.app_id?.slice(0, 12) || "Welcome page"),
           esc(ownerName(r.owner)),
         ];
@@ -611,11 +625,11 @@ function formatSize(n) {
       : (n / 1024).toFixed(1) + " KB";
 }
 const input = (name, label, type = "text", help = "", value = "") =>
-  `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${type === "password" ? 'autocomplete="new-password"' : ""} required>${help ? `<small>${help}</small>` : ""}</label>`;
+  `<label class="grid gap-2 text-xs font-medium text-slate-700">${label}<input class="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" name="${name}" type="${type}" value="${esc(value)}" ${type === "password" ? 'autocomplete="new-password"' : ""} required>${help ? `<small class="text-xs font-normal leading-6 text-slate-500">${help}</small>` : ""}</label>`;
 const textarea = (name, label, help = "", value = "") =>
-  `<label>${label}<textarea name="${name}" spellcheck="false">${esc(value)}</textarea>${help ? `<small>${help}</small>` : ""}</label>`;
+  `<label class="grid gap-2 text-xs font-medium text-slate-700">${label}<textarea class="min-h-28 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-3 font-mono text-sm outline-none focus:border-emerald-500" name="${name}" spellcheck="false">${esc(value)}</textarea>${help ? `<small class="text-xs font-normal leading-6 text-slate-500">${help}</small>` : ""}</label>`;
 const select = (name, label, options, help = "") =>
-  `<label>${label}<select name="${name}">${options.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</select>${help ? `<small>${help}</small>` : ""}</label>`;
+  `<label class="grid gap-2 text-xs font-medium text-slate-700">${label}<select class="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500" name="${name}">${options.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</select>${help ? `<small class="text-xs font-normal leading-6 text-slate-500">${help}</small>` : ""}</label>`;
 function ownerField() {
   return me.role === "admin"
     ? select(
@@ -712,11 +726,12 @@ async function create(kind = current) {
           select("mode", "Workload", [
             ["web", "Website / API / webhook"],
             ["worker", "Background worker / Telegram polling bot"],
+            ["private", "Private service · no public access"],
           ]) +
           textarea(
             "command",
             "Start command",
-            "Leave empty for a working starter. Web apps must listen on 0.0.0.0:8080.",
+            "Leave empty for a working starter. Listen on 0.0.0.0 and your chosen container port. Port 443 is HTTP behind Nginx TLS termination. Private services share an account-only network.",
           ) +
           textarea(
             "env",
@@ -724,7 +739,7 @@ async function create(kind = current) {
             'Example: {"BOT_TOKEN":"your-token"}. Values are sent to the container and omitted from panel resource responses.',
             "{}",
           );
-      if(kind==='apps') fields+='<div id="create-budget" class="mt-4"></div>'+input('memory_mb','RAM (MiB)','number','','512')+input('cpu_millis','CPU (millicores)','number','1000 = one CPU core.','1000')+input('disk_mb','Workspace disk (MiB)','number','Kernel-enforced volume capacity; filesystem metadata uses some space.','1024');
+      if(kind==='apps') fields+=input('container_port','Application listening port','number','80, 443, 8080, or another port.','8080')+'<div id="create-budget" class="mt-4"></div>'+input('memory_mb','RAM (MiB)','number','','512')+input('cpu_millis','CPU (millicores)','number','1000 = one CPU core.','1000')+input('disk_mb','Workspace disk (MiB)','number','Kernel-enforced volume capacity; filesystem metadata uses some space.','1024');
       if (kind === "domains")
         fields +=
           input(
@@ -816,7 +831,7 @@ async function create(kind = current) {
             .filter(Boolean);
         if (v.quota) v.quota = Number(v.quota);
         if (v.ttl) v.ttl = Number(v.ttl);
-        for(const key of ["memory_mb","cpu_millis","disk_mb"])if(v[key]!==undefined)v[key]=Number(v[key]);
+        for(const key of ["memory_mb","cpu_millis","disk_mb","container_port"])if(v[key]!==undefined)v[key]=Number(v[key]);
         if (v.env) {
           try {
             v.env = JSON.parse(v.env);
@@ -871,8 +886,9 @@ document.addEventListener("click", async (e) => {
   if (b.dataset.action) {
     const action = b.dataset.action,
       id = b.dataset.id;
+    if(action==='performance'){const item=resources.apps.find(a=>a.id===id);const cores=(item.data.cpu_millis||1000)/1000;modal('Application performance · '+item.name,`<p class="mb-5 text-sm leading-6">Your CPU quota is ${cores} cores with ${item.data.memory_mb||512} MiB RAM. Multi-process servers can use all assigned cores. Start with ${Math.max(1,Math.floor(cores))} workers and measure memory per worker; increasing workers can exhaust RAM. Configure WEB_CONCURRENCY / framework workers in your application. CGPanel does not rewrite your code.</p><label class="flex gap-3 text-sm"><input name="cache" type="checkbox" ${item.data.performance?.cache?'checked':''}> Cache explicitly public web pages</label><p class="my-4 text-xs leading-6 text-slate-500">Only GET/HEAD without cookies or Authorization are eligible. The origin must send Cache-Control: public. Private/no-store/no-cache and Set-Cookie responses are excluded. Origin expiry controls freshness; publish hashed asset URLs when deploying. Cache uses up to 256 MiB server-wide.</p>`,'Save performance',async v=>{await api('/v5/apps/'+id+'/performance','POST',{cache:!!v.cache});$('#dialog').close();await render()});return;}
     if(action==='limits'){const item=resources.apps.find(a=>a.id===id);const budget=await api('/v5/users/'+item.owner+'/budget');const entry=budget.applications.find(a=>a.id===id);modal('Application resources · '+item.name,
-      budgetSummary(budget)+input('memory_mb','RAM (MiB)','number','',entry.limits.memory_mb)+input('cpu_millis','CPU (millicores)','number','1000 = one CPU core.',entry.limits.cpu_millis)+input('disk_mb','Workspace disk (MiB)','number','Volumes can grow in place; shrinking requires migration to a new application.',entry.limits.disk_mb)+'<p class="text-xs leading-6 text-slate-500">Applying limits briefly stops this application and its IDE. First-time disk enforcement migrates the workspace and retains a recovery copy. '+(entry.disk_enforced?'Disk enforcement is active.':'This existing workspace does not yet have an enforced disk limit.')+'</p>','Apply limits',async v=>{await api('/v5/apps/'+id+'/limits','POST',Object.fromEntries(Object.entries(v).map(([k,v])=>[k,Number(v)])));$('#dialog').close();await render();toast('Application limits applied.')});return;}
+      budgetSummary(budget)+input('memory_mb','RAM (MiB)','number','',entry.limits.memory_mb)+input('cpu_millis','CPU (millicores)','number','1000 = one CPU core.',entry.limits.cpu_millis)+input('disk_mb','Workspace disk (MiB)','number','Volumes can grow in place; shrinking requires migration to a new application.',entry.limits.disk_mb)+'<p class="text-xs leading-6 text-slate-500">CPU/RAM changes use a live update when disk enforcement is already active. Lowering RAM below current usage can cause an out-of-memory restart. Disk growth or first-time enforcement stops this application and its IDE briefly; migration retains a recovery copy. '+(entry.disk_enforced?'Disk enforcement is active.':'This existing workspace does not yet have an enforced disk limit.')+'</p>','Apply limits',async v=>{await api('/v5/apps/'+id+'/limits','POST',Object.fromEntries(Object.entries(v).map(([k,v])=>[k,Number(v)])));$('#dialog').close();await render();toast('Application limits applied.')});return;}
     if(action==='logs'){sessionStorage.setItem('cg-app',id);location.hash='program-logs';return;}
     if (action === "test-cron") {
       const task=resources.schedules.find(r=>r.id===id);
@@ -1195,3 +1211,28 @@ const docs = documentation({
   getCurrent: () => current,
 });
 boot();
+
+async function loginSecurityPage(){
+ const v=await api('/login-security');$('#content').innerHTML=`<section class="max-w-2xl rounded-2xl border border-slate-200 bg-white p-6"><h2 class="mb-4 text-lg font-semibold">Protect every panel login</h2><form id="login-policy" class="grid gap-5"><label class="flex gap-3 text-sm"><input name="captcha" type="checkbox" ${v.captcha?'checked':''}> Require a one-use arithmetic challenge</label>${input('attempts','Attempts per IP and account','number','3–30 attempts per window',v.attempts)}${input('window_seconds','Window (seconds)','number','60–3600 seconds. Counters survive panel restarts.',v.window_seconds)}<p class="text-xs leading-6 text-slate-500">Local arithmetic is a basic bot obstacle; combine it with MFA, IP restrictions, HTTPS, and upstream protection. If locked out, the server owner can temporarily set CGPANEL_LOGIN_RECOVERY=1 and restart the panel to disable challenges. Throttling stays active.</p><button class="rounded-xl bg-forest p-3 text-white">Save login policy</button><p id="policy-result" role="status" class="text-xs text-emerald-700"></p></form></section>`;
+ $('#login-policy').onsubmit=async e=>{e.preventDefault();try{const values=Object.fromEntries(new FormData(e.target));await api('/login-security','POST',{captcha:!!values.captcha,attempts:Number(values.attempts),window_seconds:Number(values.window_seconds)});$('#policy-result').textContent='Login policy saved'}catch(error){toast(error.message)}};
+}
+async function mcpPage(){
+ const tokens=await api('/mcp/tokens');const oauth=new URLSearchParams(location.hash.split('?')[1]||'');
+ $('#content').innerHTML=`<section class="mb-5 rounded-2xl border border-slate-200 bg-white p-6"><h2 class="text-lg font-semibold">Connect your AI assistant</h2><p class="my-4 text-sm leading-6">MCP endpoint: <code>${esc(location.origin)}/mcp</code>. Use OAuth for compatible remote connectors (including ChatGPT developer mode); use a bearer credential for clients supporting custom Authorization headers. Availability depends on your client and plan.</p><p class="mb-5 text-xs leading-6 text-slate-500">Credentials inherit your account permissions. Read-only credentials list resources and read analytics. Manage credentials can also restart permitted applications. They never grant a general shell or database administrator access. Revoke credentials you no longer use; avoid placing secrets in URLs or public chat.</p><button id="mcp-create" class="rounded-xl bg-forest px-4 py-3 text-sm text-white">Create client credential</button><a class="ml-4 text-sm text-emerald-700" href="#docs">Read setup guide</a></section><section class="grid gap-3">${tokens.map(t=>`<div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4"><div class="text-sm"><b>${esc(t.name)}</b><p class="mt-1 text-xs text-slate-500">${esc(t.prefix)}… · ${esc(t.scope)} · expires ${new Date(t.expires*1000).toLocaleString()} ${t.revoked?'· Revoked':''}</p></div>${t.revoked?'':`<button data-revoke-mcp="${esc(t.id)}" class="rounded-lg border border-red-200 px-4 py-2 text-xs text-red-700">Revoke</button>`}</div>`).join('')}</section>`;
+ $('#mcp-create').onclick=()=>modal('Create MCP credential',input('name','Client name')+select('scope','Permissions',[['read','Read only'],['manage','Read and restart applications']])+input('expires_days','Expiry (days)','number','1–90 days',30)+textarea('allowed_ips','Allowed source IPs / CIDRs','Optional. One per line.'),'Create credential',async v=>{const result=await api('/mcp/tokens','POST',{...v,expires_days:Number(v.expires_days),allowed_ips:v.allowed_ips.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean)});modal('Save this credential now',`<p class="mb-4 text-xs">Shown once. Configure Authorization: Bearer &lt;credential&gt; in your MCP client.</p><textarea readonly class="w-full rounded-xl border border-slate-200 p-4 font-mono text-xs" aria-label="MCP credential">${esc(result.token)}</textarea>`,'Close',null);});
+ document.querySelectorAll('[data-revoke-mcp]').forEach(button=>button.onclick=async()=>{try{await api('/mcp/tokens/'+button.dataset.revokeMcp,'DELETE');await mcpPage()}catch(e){toast(e.message)}});
+ if(oauth.has('client_id')){
+  const box=document.createElement('section');box.className='mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-6';box.innerHTML=`<h2 class="text-lg font-semibold">Authorize an AI client?</h2><p class="my-3 break-all text-sm">Requested permissions: <b>${esc(oauth.get('scope'))}</b><br>Redirect destination: ${esc(oauth.get('redirect_uri'))}</p><p class="mb-4 text-xs">Approve only if you started this connection in a trusted client. Access lasts one day and can be revoked here.</p><button id="oauth-consent" class="rounded-xl bg-forest px-4 py-3 text-sm text-white">Authorize this account</button><a href="#mcp" class="ml-4 text-sm">Cancel</a>`;$('#content').prepend(box);$('#oauth-consent').onclick=async()=>{try{const response=await api('/mcp/authorize','POST',Object.fromEntries(oauth));location.assign(response.redirect)}catch(e){toast(e.message)}};
+ }
+}
+async function databaseStudio(){
+ const databases=await api('/resources/databases');if(!databases.length){$('#content').textContent='Create a database first.';return}
+ const chosen=sessionStorage.getItem('cgp-studio');let db=databases.find(d=>d.id===chosen)||databases[0];
+ $('#content').innerHTML=`<section class="rounded-2xl border border-slate-200 bg-white p-6"><div class="flex flex-wrap items-center gap-3"><select id="studio-db" class="max-w-full rounded-xl border border-slate-200 p-3 text-sm">${databases.map(d=>`<option value="${d.id}" ${d.id===db.id?'selected':''}>${esc(d.name)} · ${esc(d.data.engine)}</option>`).join('')}</select><button id="studio-tables" class="rounded-xl border border-slate-200 p-3 text-sm">List tables</button><button id="studio-schema" class="rounded-xl border border-slate-200 p-3 text-sm">Schema</button><a href="#docs" class="text-sm text-emerald-700">Database guide</a></div><p class="my-4 text-xs leading-6 text-slate-500">SQL runs as this database’s own role. You can browse, create tables, change schemas, insert, update and delete rows. Back up before writes. Results are limited to 500 rows / 1 MiB; a truncated statement is rolled back. Use a database client for large imports and complete SQL exports.</p><form id="studio-form" class="grid gap-4"><textarea id="studio-sql" aria-label="SQL query" spellcheck="false" class="h-44 w-full rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-sm">SELECT 1;</textarea><div class="flex gap-3"><button id="studio-run" class="rounded-xl bg-forest px-5 py-3 text-sm text-white">Execute SQL</button><button type="button" id="studio-export" class="rounded-xl border border-slate-200 p-3 text-sm" disabled>Export result as CSV</button></div></form><div id="studio-result" class="mt-6 overflow-auto text-sm" role="status"></div></section>`;
+ let result;const execute=async()=>{const button=$('#studio-run');button.disabled=true;try{result=await api('/databases/'+db.id+'/query','POST',{sql:$('#studio-sql').value});$('#studio-result').innerHTML=`<p class="mb-3 text-xs text-slate-500">${result.truncated?'Result truncated; transaction rolled back.':result.affected+' affected / returned rows'}</p><table class="w-full text-left text-xs"><thead><tr>${result.columns.map(v=>`<th class="border-b p-3">${esc(v)}</th>`).join('')}</tr></thead><tbody>${result.rows.map(row=>`<tr>${row.map(v=>`<td class="max-w-80 break-words border-b p-3">${v===null?'NULL':esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;$('#studio-export').disabled=!result.columns.length}catch(e){$('#studio-result').textContent=e.message}finally{button.disabled=false}};
+ $('#studio-db').onchange=async e=>{sessionStorage.setItem('cgp-studio',e.target.value);await databaseStudio()};
+ $('#studio-form').onsubmit=async e=>{e.preventDefault();if(!/^\s*(select|show|describe|explain)\b/i.test($('#studio-sql').value)&&!confirm('Execute this SQL? It can permanently change database data or schema.'))return;await execute()};
+ $('#studio-tables').onclick=()=>{$('#studio-sql').value=db.data.engine==='mysql'?'SHOW TABLES;':"SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name;";execute()};
+ $('#studio-schema').onclick=()=>{$('#studio-sql').value="SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema="+(db.data.engine==='mysql'?"DATABASE()":"'public'")+" ORDER BY table_name,ordinal_position;";execute()};
+ $('#studio-export').onclick=()=>{if(!result)return;const quote=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const csv=[result.columns,...result.rows].map(row=>row.map(quote).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));const a=document.createElement('a');a.href=url;a.download='database-result.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+}

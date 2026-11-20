@@ -10,11 +10,11 @@ if missing:
     run('apt-get','-o','DPkg::Lock::Timeout=60','install','-y',*missing,env={**os.environ,'DEBIAN_FRONTEND':'noninteractive'})
 if subprocess.run(['id','cgpvmail'],capture_output=True).returncode:
     run('useradd','--system','--home-dir','/var/lib/cgpanel-mail','--create-home','--shell','/usr/sbin/nologin','cgpvmail')
-folder=pathlib.Path('/etc/postfix/cgpanel');folder.mkdir(mode=0o755,exist_ok=True);folder.chmod(0o755)
+folder=pathlib.Path('/etc/postfix/cgpanel');first_install=not folder.exists();folder.mkdir(mode=0o755,exist_ok=True);folder.chmod(0o755)
 run('chown','root:dovecot',str(folder))
 for name in ['passwd','domains','mailboxes','senders']:
     path=folder/name
     if not path.exists():path.write_text('');path.chmod(0o640);run('chown','root:dovecot',str(path))
-run('postconf','-e','inet_interfaces = loopback-only')
+if first_install:run('postconf','-e','inet_interfaces = loopback-only')
 run('systemctl','enable','--now','redis-server','rspamd')
 print('Mail packages installed. Configure a mail hostname in CGPanel to activate mail services.')

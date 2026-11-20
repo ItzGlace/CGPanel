@@ -18,6 +18,8 @@ active_services=[name for name in ['nginx','ssh','vsftpd','postfix','dovecot','r
  if subprocess.run(['systemctl','is-active','--quiet',name]).returncode==0]
 
 def run(*args, timeout=180): subprocess.run(args,check=True,timeout=timeout)
+# Preinstall packages while existing application containers keep serving traffic.
+run('python3',str(payload/'deploy/setup-v0.5.py'),str(payload),'--dependencies-only',timeout=1500)
 # Hold the job database write lock until both services are stopped. A worker
 # cannot start a new provisioning job between the check and the shutdown.
 with sqlite3.connect('/var/lib/cgpanel/panel.db',timeout=15) as guard:
@@ -25,6 +27,7 @@ with sqlite3.connect('/var/lib/cgpanel/panel.db',timeout=15) as guard:
     tables={row[0] for row in guard.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if 'jobs' in tables and guard.execute("SELECT count(*) FROM jobs WHERE status='running'").fetchone()[0]:
         raise RuntimeError('Background jobs are running; update deferred. Retry after they finish.')
+    downtime_started=time.monotonic()
     run('systemctl','stop','cgpanel','cgpanel-agent')
 try:
     with sqlite3.connect('/var/lib/cgpanel/panel.db') as db,sqlite3.connect(snapshot/'panel.db') as copy: db.backup(copy)
@@ -58,7 +61,9 @@ try:
         time.sleep(1)
     else:raise RuntimeError('New panel did not pass its health check')
     run('systemctl','is-active','--quiet','cgpanel','cgpanel-agent')
-    print('Installed',version,'Recovery snapshot:',snapshot)
+    downtime=round(time.monotonic()-downtime_started,3)
+    (snapshot/'outcome.json').write_text(json.dumps({'version':version,'panel_interruption_seconds':downtime,'website_containers_stopped':False}))
+    print('Installed',version,'Recovery snapshot:',snapshot,'Panel interruption seconds:',downtime)
 except Exception:
     subprocess.run(['systemctl','stop','cgpanel','cgpanel-agent'],timeout=60)
     for name in binary_names:

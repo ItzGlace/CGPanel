@@ -84,7 +84,13 @@ pub async fn prepare(reg: &Registry, op: &Operation, port: u16) -> Result<String
         "max-size=1mb",
     ]);
     if s(&op.data, "mode") == "web" {
-        options.extend(args(&["-p", &format!("127.0.0.1:{port}:8080")]));
+        options.extend(args(&[
+            "-p",
+            &format!(
+                "127.0.0.1:{port}:{}",
+                op.data["container_port"].as_u64().unwrap_or(8080)
+            ),
+        ]));
     }
     options.push(image.into());
     pod(&op.tenant, options, None, 60).await?;

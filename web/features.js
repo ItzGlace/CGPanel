@@ -117,6 +117,7 @@ export function features(ctx) {
       ) +
       `<div class="mb-6 grid gap-4 sm:grid-cols-3">${card("Current status", badge(settings.state) + `<p class="mt-3 text-xs text-slate-400">${latest ? date(latest.at) : "Awaiting first check"}</p>`)}${card("Availability · 24 hours", `<p class="text-3xl font-medium text-forest">${uptime}</p><p class="mt-3 text-xs text-slate-400">${data.last_day.samples} checks from this server</p>`)}${card("Latest response", `<p class="text-3xl font-medium text-forest">${latest?.latency_ms || 0}<span class="ml-2 text-sm text-slate-400">ms</span></p><p class="mt-3 text-xs text-slate-400">${latest ? "HTTP " + latest.status : "No measurements yet"}</p>`)}</div>` +
       card("Response time", sparkline(data.checks)) +
+      `<section id="security-signals" class="mb-5 rounded-xl border border-slate-200 bg-white p-5 text-xs text-slate-500">Loading security signals…</section>` +
       card(
         "Recent checks",
         data.checks.length
@@ -140,8 +141,10 @@ export function features(ctx) {
           : empty("Enable monitoring to begin."),
       ) +
       note(
-        "An incident is opened after two failed checks. Your connected Telegram bot receives outage and recovery messages. Availability reflects checks from this server, not a global monitoring network.",
+        "An incident is opened after two failed checks. Configured Telegram and email destinations receive outage and recovery messages. Suspected-abuse alerts have a one-hour cooldown. Availability reflects checks from this server, not a global monitoring network.",
       );
+    try{const security=await api('/v2/monitor/'+selected+'/security');const target=$('#security-signals');if(target)target.innerHTML='<h2 class="mb-4 text-sm font-semibold text-slate-800">Security signals · last five minutes</h2><p>'+Number(security.samples||0)+' sampled requests · '+Number(security.rejected||0)+' rejected · '+(security.database_journal_available?Number(security.database_auth_failures||0)+' database login failures':'Database log coverage unavailable')+'</p><p class="mt-3 leading-6">'+esc(security.note||'')+'</p><p class="mt-2 leading-6">'+esc(security.database_scope||'')+'</p>'}catch(error){const target=$('#security-signals');if(target)target.textContent='Security signals unavailable: '+error.message}
+
   }
   async function monitorConfig(id) {
     const domain = domains.find((d) => d.id === id),
@@ -185,6 +188,10 @@ export function features(ctx) {
           ],
           c.telegram_id,
         ) +
+        checkbox("security", "Detect traffic abuse and database login failures", c.security) +
+        input("request_threshold","Request warning threshold / 5 minutes","number","Cooldown: one suspected-abuse alert per hour.",c.request_threshold||1000) +
+        input("email_from","Alert sender mailbox","email","Enabled mailbox on this domain; leave blank for no email alerts.",c.email_from||'').replace(' required','') +
+        input("email_to","Alert recipient","email","One address. Delivery uses the server mail service.",c.email_to||'').replace(' required','') +
         checkbox("analytics", "Enable visitor analytics", c.analytics) +
         checkbox("clicks", "Enable click tracking", c.clicks) +
         input(
@@ -199,6 +206,8 @@ export function features(ctx) {
         await api("/v2/monitor/" + id, "POST", {
           ...v,
           enabled: v.enabled === "on",
+          security: v.security === "on",
+          request_threshold:Number(v.request_threshold),
           analytics: v.analytics === "on",
           clicks: v.clicks === "on",
           interval: Number(v.interval),
@@ -224,7 +233,7 @@ export function features(ctx) {
           selected +
           (path ? "?path=" + encodeURIComponent(path) : "?") +
           "&viewport=" +
-          viewport,
+          viewport + "&kind=" + (sessionStorage.getItem("cgp-heatmap-kind") || "click"),
       ),
       api("/v2/monitor/" + selected),
     ]);
@@ -253,7 +262,7 @@ export function features(ctx) {
         count = cell?.count || 0;
       return `<div class="aspect-[2/1] rounded-sm ${colors[count ? Math.max(1, Math.ceil((count / maxClicks) * 5)) : 0]}" title="${count} clicks" aria-label="Row ${Math.floor(i / 10) + 1}, column ${(i % 10) + 1}: ${count} clicks"></div>`;
     }).join("");
-    const snippet = `<script defer src="/__cgpanel/tracker.js" data-site="${selected}" data-key="${monitor.settings.analytics_key || "ENABLE_ANALYTICS_FIRST"}"></script>`;
+    const snippet = `<script defer data-pointer="true" src="/__cgpanel/tracker.js" data-site="${selected}" data-key="${monitor.settings.analytics_key || "ENABLE_ANALYTICS_FIRST"}"></script>`;
     panel().innerHTML =
       toolbar(
         chooser,
@@ -269,7 +278,7 @@ export function features(ctx) {
               "No visits recorded yet. Add the tracking script to your website.",
             ),
       ) +
-      `<div class="grid gap-5 lg:grid-cols-2">${card("Click heatmap", `<div class="mb-4 flex flex-wrap gap-3"><select id="heatmap-path" class="max-w-full rounded-lg border border-slate-200 px-3 py-2 text-xs">${[...new Set([data.heatmap.path, ...data.pages.map((p) => p.path)])].map((p) => `<option value="${esc(p)}" ${p === data.heatmap.path ? "selected" : ""}>${esc(p || "/")}</option>`).join("")}</select><select id="heatmap-viewport" class="rounded-lg border border-slate-200 px-3 py-2 text-xs"><option ${viewport === "desktop" ? "selected" : ""}>desktop</option><option ${viewport === "mobile" ? "selected" : ""}>mobile</option></select></div><div class="grid grid-cols-10 gap-1" role="img" aria-label="Click concentration by relative page position; darker cells mean more clicks">${cells}</div><p class="mt-3 text-xs text-slate-500">Top to bottom of the page · darker means more clicks. Layout changes can shift historical positions.</p>`)}${card(
+      `<div class="grid gap-5 lg:grid-cols-2">${card("Click heatmap", `<div class="mb-4 flex flex-wrap gap-3"><select id="heatmap-path" class="max-w-full rounded-lg border border-slate-200 px-3 py-2 text-xs">${[...new Set([data.heatmap.path, ...data.pages.map((p) => p.path)])].map((p) => `<option value="${esc(p)}" ${p === data.heatmap.path ? "selected" : ""}>${esc(p || "/")}</option>`).join("")}</select><select id="heatmap-viewport" class="rounded-lg border border-slate-200 px-3 py-2 text-xs"><option ${viewport === "desktop" ? "selected" : ""}>desktop</option><option ${viewport === "mobile" ? "selected" : ""}>mobile</option></select></div><label class="mb-4 block text-xs">Hotspot type<select id="heatmap-kind" class="ml-3 rounded-lg border border-slate-200 p-2"><option value="click">Clicks</option><option value="move" ${data.heatmap.kind === "move" ? "selected" : ""}>Mouse movement</option></select></label><div class="grid grid-cols-10 gap-1" role="img" aria-label="Click concentration by relative page position; darker cells mean more clicks">${cells}</div><p class="mt-3 text-xs text-slate-500">Top to bottom of the page · darker means more clicks. Layout changes can shift historical positions.</p>`)}${card(
         "Most clicked elements",
         data.targets.length
           ? table(
@@ -303,6 +312,7 @@ export function features(ctx) {
       note(
         "Unique IPs estimate visitors: shared networks can combine people, and changing IPs can count one person more than once. IP identifiers are hashed separately for each site and day. Analytics require your site's consent setup where applicable.",
       );
+    $('#heatmap-kind').onchange=async e=>{sessionStorage.setItem('cgp-heatmap-kind',e.target.value);await analytics()};
     panel().dataset.snippet = snippet;
   }
   async function integrationPage() {

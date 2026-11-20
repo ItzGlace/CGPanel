@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "CGPanel Administrator and Management API",
-    "version": "0.5.2",
+    "version": "0.6.0",
     "description": "Community alpha. Session + CSRF or administrator bearer tokens. See docs/API.md for operational boundaries.",
     "license": {
       "name": "AGPL-3.0-or-later",
@@ -3962,6 +3962,542 @@
           }
         }
       }
+    },
+    "/api/mcp/tokens": {
+      "get": {
+        "operationId": "get_api_mcp_tokens",
+        "summary": "List MCP credentials",
+        "tags": [
+          "MCP"
+        ],
+        "description": "Session only. Own credential metadata; secrets never returned.",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_mcp_tokens",
+        "summary": "Create MCP credential",
+        "tags": [
+          "MCP"
+        ],
+        "description": "Session + CSRF. Own role boundaries; token is returned once. Does not create an administrator API key.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "read",
+                      "manage"
+                    ]
+                  },
+                  "expires_days": {
+                    "type": "integer"
+                  },
+                  "allowed_ips": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/tokens/{id}": {
+      "delete": {
+        "operationId": "delete_api_mcp_tokens_id",
+        "summary": "Revoke MCP credential",
+        "tags": [
+          "MCP"
+        ],
+        "description": "Session + CSRF. Own credentials only.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/mcp/authorize": {
+      "post": {
+        "operationId": "post_api_mcp_authorize",
+        "summary": "Consent to OAuth client",
+        "tags": [
+          "MCP"
+        ],
+        "description": "Session + CSRF. Exact registered redirect and PKCE S256 required. User consent must be explicit.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/login-challenge": {
+      "get": {
+        "operationId": "get_api_login_challenge",
+        "summary": "Request login challenge",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Public. Returns enabled:false when local CAPTCHA is off; otherwise an IP-bound one-use challenge.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/login-security": {
+      "get": {
+        "operationId": "get_api_login_security",
+        "summary": "Read panel login policy",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only; counters survive restarts.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_login_security",
+        "summary": "Set panel login policy",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator browser session + CSRF only.",
+        "security": [
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "captcha": {
+                    "type": "boolean"
+                  },
+                  "attempts": {
+                    "type": "integer"
+                  },
+                  "window_seconds": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "attempts",
+                  "window_seconds"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/databases/{id}/query": {
+      "post": {
+        "operationId": "post_api_databases_id_query",
+        "summary": "Execute Database Studio SQL",
+        "tags": [
+          "Databases"
+        ],
+        "description": "Owned database, using its isolated role. One statement, 15-second engine timeout, 500 rows/1 MiB result limit. SQL can change data.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sql": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sql"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v5/apps/{id}/performance": {
+      "post": {
+        "operationId": "post_api_v5_apps_id_performance",
+        "summary": "Configure public page cache",
+        "tags": [
+          "Applications"
+        ],
+        "description": "Owned web application. Eligible requests have no cookies/authorization and origin explicitly marks response public.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cache": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "cache"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/monitor/{id}/security": {
+      "get": {
+        "operationId": "get_api_v2_monitor_id_security",
+        "summary": "Read security signals",
+        "tags": [
+          "Monitoring"
+        ],
+        "description": "Owned domain. Sampled traffic and account database login failures; journal coverage may be unavailable.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -4309,6 +4845,18 @@
           "telegram_id": {
             "type": "string"
           },
+          "email_from": {
+            "type": "string"
+          },
+          "email_to": {
+            "type": "string"
+          },
+          "security": {
+            "type": "boolean"
+          },
+          "request_threshold": {
+            "type": "integer"
+          },
           "analytics": {
             "type": "boolean"
           },
@@ -4446,7 +4994,8 @@
             "type": "string",
             "enum": [
               "web",
-              "worker"
+              "worker",
+              "private"
             ]
           },
           "command": {
@@ -4457,6 +5006,9 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "container_port": {
+            "type": "integer"
           },
           "memory_mb": {
             "type": "integer"

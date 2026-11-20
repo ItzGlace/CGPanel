@@ -294,7 +294,7 @@ pub async fn start(app: App) -> Result<(), Error> {
     Ok(())
 }
 async fn run_one(app: &App, alerts: bool) -> Result<(), Error> {
-    let Some(row) = sqlx::query("SELECT j.* FROM jobs j JOIN users u ON u.id=j.owner WHERE j.status='queued' AND (j.kind='monitor_alert')=? AND u.enabled=1 ORDER BY j.created LIMIT 1").bind(alerts).fetch_optional(&app.db).await? else { return Ok(()); };
+    let Some(row) = sqlx::query("SELECT j.* FROM jobs j JOIN users u ON u.id=j.owner WHERE j.status='queued' AND (j.kind IN ('monitor_alert','monitor_email'))=? AND u.enabled=1 ORDER BY j.created LIMIT 1").bind(alerts).fetch_optional(&app.db).await? else { return Ok(()); };
     let rid: String = row.get("id");
     let owner: String = row.get("owner");
     let kind: String = row.get("kind");
@@ -319,6 +319,7 @@ async fn run_one(app: &App, alerts: bool) -> Result<(), Error> {
         "runtime" => "runtime_configure",
         "ide" => "ide_configure",
         "monitor_alert" => "telegram_send",
+        "monitor_email" => "monitor_email",
         _ => "invalid_job",
     };
     let result = cgpanel::agent_call_timeout(

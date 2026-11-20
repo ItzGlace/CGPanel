@@ -99,6 +99,13 @@ pub async fn stats(reg: &Registry, op: &Operation) -> Result<Value> {
     let mut failed = 0;
     for line in output.lines() {
         if let Ok(v) = serde_json::from_str::<Value>(line) {
+            if !v["at"]
+                .as_str()
+                .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok())
+                .is_some_and(|at| chrono::Utc::now().timestamp() - at.timestamp() <= 300)
+            {
+                continue;
+            }
             let status = v["status"].as_u64().unwrap_or(0);
             let ip = s(&v, "ip");
             if !cgpanel::valid_ip(ip) {
@@ -121,7 +128,7 @@ pub async fn stats(reg: &Registry, op: &Operation) -> Result<Value> {
     sources.sort_by_key(|(_, c)| std::cmp::Reverse(c.0));
     sources.truncate(20);
     Ok(
-        json!({"samples":total,"rejected":rejected,"server_errors":failed,"sources":sources.iter().map(|(ip,c)|json!({"ip":ip,"requests":c.0,"rejected":c.1,"errors":c.2,"unusual":c.1>=20||c.2>=10})).collect::<Vec<_>>(),"note":"Most recent 2,000 logged requests, not a fixed time window. Repeated rejections or errors are investigation signals, not proof of an attack."}),
+        json!({"window_seconds":300,"possibly_truncated":output.lines().count()>=2000,"samples":total,"rejected":rejected,"server_errors":failed,"sources":sources.iter().map(|(ip,c)|json!({"ip":ip,"requests":c.0,"rejected":c.1,"errors":c.2,"unusual":c.1>=20||c.2>=10})).collect::<Vec<_>>(),"note":"Last five minutes, capped at the most recent 2,000 logged requests. Repeated rejections or errors are investigation signals, not proof of an attack."}),
     )
 }
 pub async fn configure(reg: &mut Registry, op: &Operation) -> Result<Value> {

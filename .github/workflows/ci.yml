@@ -19,11 +19,18 @@ jobs:
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
+      - run: CGPANEL_DNS_FIXTURE_OUT=/tmp/cgpanel-generated.zone cargo test --locked
       - run: cargo build --locked --bin cgpanel-workspace && python3 tests/workspace.py
       - run: cargo build --locked --bin cgpanel && python3 tests/admin_api.py
+      - run: python3 tests/release_features.py && python3 tests/monitor_alerts.py
+      - run: npx playwright install --with-deps chromium
+      - run: python3 tests/browser_features.py
       - run: python3 tests/analytics.py && python3 tests/mfa.py && python3 tests/protection.py
       - run: python3 tests/sftp_policy.py && python3 tests/firewall_migration.py
       - run: python3 -m py_compile tests/*.py deploy/*.py
       - run: python3 scripts/build_api_docs.py --check
       - run: bash -n deploy/install.sh deploy/install-features.sh deploy/upgrade-v0.2.sh deploy/reload-nginx
+      - run: docker build -t cgpanel-integration -f tests/host-tools.Dockerfile tests
+      - run: docker run --rm -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-integration sh -c 'mkdir -p /run/mysqld && chown mysql:mysql /run/mysqld && python3 tests/host_tools.py'
+      - run: docker run --rm -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-integration python3 tests/cache.py
+      - run: docker run --rm -v /tmp/cgpanel-generated.zone:/generated.zone:ro cgpanel-integration named-checkzone example.com /generated.zone

@@ -14,6 +14,7 @@ pub fn routes() -> Router<App> {
         )
         .route("/v5/users/{id}/budget", get(budget).post(set_budget))
         .route("/v5/apps/{id}/limits", post(set_limits))
+        .route("/v5/apps/{id}/performance", post(performance))
         .route("/v5/apps/{id}/backup-import", post(import_backup))
 }
 async fn import_backup(
@@ -82,7 +83,12 @@ async fn set_limits(
     )
     .await?;
     for key in ["memory_mb", "cpu_millis", "disk_mb"] {
-        r.data[key] = value[key].clone();
+        if let Some(entry) = result["applications"]
+            .as_array()
+            .and_then(|a| a.iter().find(|a| a["id"] == rid))
+        {
+            r.data[key] = entry["limits"][key].clone();
+        }
     }
     sqlx::query("UPDATE resources SET data=? WHERE id=?")
         .bind(r.data.to_string())
@@ -195,4 +201,25 @@ async fn console(
     {
         Err(bad("Console requires Linux"))
     }
+}
+
+async fn performance(
+    State(app): State<App>,
+    Extension(user): Extension<Identity>,
+    Path(rid): Path<String>,
+    Json(v): Json<Value>,
+) -> Api<Value> {
+    let mut r = owned(&app, &user, &rid).await?;
+    if r.kind != "apps" {
+        return Err(bad("Choose an application"));
+    }
+    let _guard = app.writes.lock().await;
+    let result = host(&app, &user, "performance_configure", &r.owner, &rid, v).await?;
+    r.data["performance"] = result["performance"].clone();
+    sqlx::query("UPDATE resources SET data=? WHERE id=?")
+        .bind(r.data.to_string())
+        .bind(rid)
+        .execute(&app.db)
+        .await?;
+    Ok(Json(result))
 }

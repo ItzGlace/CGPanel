@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0 — release candidate
+
+- Account-scoped MCP tools with hashed, expiring credentials and OAuth S256 PKCE consent.
+- Configurable persistent panel login throttling and one-use local challenges.
+- Database Studio for MariaDB/PostgreSQL; per-database privileges and bounded SQL execution.
+- Fixed protection/CAPTCHA forms and editor search; SPA page views and sampled pointer hotspots.
+- Grouped subdomain DNS zones and safe multi-string DKIM/DMARC TXT rendering.
+- Configurable application ports, account-private service networks and larger resource budgets.
+- Live CPU/RAM limit updates for enforced volumes, disk reservation admission and growth headroom.
+- Opt-in public-page cache with cookie/auth/private-response exclusions.
+- Sampled abuse/database-login signals and mailbox-owned email alerts alongside Telegram.
+- Prepare updater dependencies before downtime; preserve configured Postfix listeners during updates.
+
+Host-only Podman, mail-delivery and update downtime validation remains required before a stable production release.
+
+
 ## 0.4.1
 
 - Disable every SSH forwarding type, including Unix-socket forwarding, for existing CGPanel SFTP-only profiles during upgrades.

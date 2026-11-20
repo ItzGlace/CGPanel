@@ -4,7 +4,7 @@
 
 CGPanel brings websites, APIs, Telegram bots, databases, and hosting tools into a familiar category-based dashboard. It is an independent project, with an original interface inspired by traditional hosting panels. It is not affiliated with cPanel.
 
-> **Version 0.5 is a development alpha, not a complete cPanel replacement.** Use a dedicated development server. Do not entrust production tenants or irreplaceable data to this release without further security review, operational testing, and off-server backups.
+> **Version 0.6 is a development alpha, not a complete cPanel replacement.** Use a dedicated development server. Do not entrust production tenants or irreplaceable data to this release without further security review, operational testing, and off-server backups.
 
 ## Documentation and administrator API
 
@@ -164,3 +164,5 @@ GNU Affero General Public License, version 3 or later (AGPL-3.0-or-later). See [
 CGPanel v0.4 adds a folder-based file manager with uploads/downloads and browser editing, optional code-server, per-application runtime versions and administrator-controlled automatic stable release updates. Read the [workspace and update guide](docs/V0.4-GUIDE.md) for usage, limits and API examples. Existing custom runtime images remain unchanged on panel upgrade.
 
 SFTP upload troubleshooting and administrator checks: [SFTP guide](docs/SFTP.md).
+
+Read the [0.6 guide](docs/V0.6-GUIDE.md) for MCP client setup, login policy, Database Studio, private services, analytics and performance controls.

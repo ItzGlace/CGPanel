@@ -13,7 +13,12 @@ pub async fn render_domain(reg: &Registry, id: &str, item: &Item) -> Result<()> 
     } else {
         let app = reference(reg, app, &item.tenant, "apps")?;
         let port = app.data["port"].as_u64().context("Missing port")?;
-        format!("location / {{ {gate} proxy_pass http://127.0.0.1:{port}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto $scheme; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $cg_connection; proxy_read_timeout 60s; }}")
+        let cache = if app.data["performance"]["cache"] == true {
+            "proxy_cache cgp_pages; proxy_cache_key \"$scheme$host$request_uri\"; proxy_cache_bypass $cgp_private_request; proxy_no_cache $cgp_private_request $cgp_origin_private $upstream_http_set_cookie; proxy_cache_valid 200 30s; proxy_cache_min_uses 2; proxy_cache_lock on; add_header X-CGPanel-Cache $upstream_cache_status always;"
+        } else {
+            ""
+        };
+        format!("location / {{ {gate} {cache} proxy_pass http://127.0.0.1:{port}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto $scheme; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $cg_connection; proxy_read_timeout 60s; }}")
     };
     let cname = s(&item.data, "cert_name");
     let expected = format!("cgp_{id}");
@@ -300,7 +305,7 @@ pub async fn execute(reg: &mut Registry, op: &Operation) -> Result<Value> {
         "zone_export" => {
             owned(reg, op, "domains")?;
             Ok(
-                json!({"zone":tokio::fs::read_to_string(format!("/etc/bind/cgpanel/{}.zone",op.id)).await?}),
+                json!({"zone":tokio::fs::read_to_string(format!("/etc/bind/cgpanel/{}.zone",zone_root(reg,&op.id))).await?}),
             )
         }
         "cdn_configure" => {

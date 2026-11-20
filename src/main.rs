@@ -26,8 +26,11 @@ use std::{
 };
 use tokio::sync::Mutex;
 mod admin_api;
+mod database_admin;
 mod documentation;
+mod login_security;
 mod mail;
+mod mcp;
 mod mfa;
 mod monitoring;
 mod protection;
@@ -40,7 +43,6 @@ struct App {
     db: SqlitePool,
     agent: String,
     secure: bool,
-    limits: Arc<Mutex<HashMap<IpAddr, (Instant, u32)>>>,
     writes: Arc<Mutex<()>>,
 }
 #[derive(Clone, Serialize)]
@@ -240,6 +242,10 @@ struct Login {
     password: String,
     #[serde(default)]
     code: String,
+    #[serde(default)]
+    challenge: String,
+    #[serde(default)]
+    answer: String,
 }
 async fn login(
     State(app): State<App>,
@@ -248,23 +254,7 @@ async fn login(
     Json(input): Json<Login>,
 ) -> Result<Response, Error> {
     let peer = SocketAddr::new(client_ip(peer.ip(), &headers), peer.port());
-    let mut limits = app.limits.lock().await;
-    limits.retain(|_, (t, _)| t.elapsed() < Duration::from_secs(300));
-    if limits.len() > 10000 && !limits.contains_key(&peer.ip()) {
-        return Err(Error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Try again later".into(),
-        ));
-    }
-    let entry = limits.entry(peer.ip()).or_insert((Instant::now(), 0));
-    entry.1 += 1;
-    if entry.1 > 10 {
-        return Err(Error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many attempts; wait five minutes".into(),
-        ));
-    }
-    drop(limits);
+    login_security::check(&app, peer.ip(), &input).await?;
     if input.password.len() > 256 || input.username.len() > 32 {
         return Err(bad("Invalid credentials"));
     }
@@ -450,15 +440,15 @@ fn validated_ips(v: &Value) -> Result<Value, Error> {
             .ok_or_else(|| bad("IP filters must be an array of CIDRs"))?
             .clone()
     };
-    if a.len() > 32
-        || a.iter().any(|x| {
-            x.as_str()
-                .is_none_or(|s| s.parse::<ipnet::IpNet>().is_err())
-        })
-    {
-        return Err(bad("Use valid IPv4/IPv6 CIDRs, at most 32"));
+    if a.len() > 32 {
+        return Err(bad("Use at most 32 IP addresses or CIDRs"));
     }
-    Ok(json!(a))
+    let values = a
+        .iter()
+        .map(|v| cgpanel::network::canonical(v.as_str().unwrap_or("")))
+        .collect::<anyhow::Result<Vec<_>>>()
+        .map_err(|_| bad("Use valid IP addresses or CIDRs"))?;
+    Ok(json!(values))
 }
 async fn update_user(
     State(app): State<App>,
@@ -580,12 +570,25 @@ async fn create_resource(
         .fetch_optional(&app.db)
         .await?
         .ok_or_else(|| bad("Active owner not found"))?;
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM resources WHERE kind=? AND owner=?")
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM resources WHERE kind=? AND owner=? AND (? != 'domains' OR NOT EXISTS (SELECT 1 FROM resources p WHERE p.kind='domains' AND p.owner=resources.owner AND resources.name LIKE '%.' || p.name))")
         .bind(&kind)
         .bind(&owner)
+        .bind(&kind)
         .fetch_one(&app.db)
         .await?;
-    if count >= u.get::<i64, _>("quota") {
+    let child_domain = if kind == "domains" {
+        let names: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM resources WHERE owner=? AND kind='domains'")
+                .bind(&owner)
+                .fetch_all(&app.db)
+                .await?;
+        names
+            .iter()
+            .any(|root| within_domain(&text(&v, "name").trim().to_lowercase(), root))
+    } else {
+        false
+    };
+    if count >= u.get::<i64, _>("quota") && !child_domain {
         return Err(bad("Resource quota reached for this account"));
     }
     let name = text(&v, "name").trim().to_lowercase();
@@ -594,6 +597,18 @@ async fn create_resource(
         "domains" => {
             if !domain(&name) {
                 return Err(bad("Enter a valid domain name"));
+            }
+            let all = sqlx::query("SELECT owner,name FROM resources WHERE kind='domains'")
+                .fetch_all(&app.db)
+                .await?;
+            if all.iter().any(|r| {
+                r.get::<String, _>("owner") != owner
+                    && (within_domain(&name, &r.get::<String, _>("name"))
+                        || within_domain(&r.get::<String, _>("name"), &name))
+            }) {
+                return Err(bad(
+                    "Parent and child domains must belong to the same account",
+                ));
             }
             if user.role != "admin" {
                 let roots: Vec<String> = sqlx::query_scalar(
@@ -626,13 +641,20 @@ async fn create_resource(
             if !identifier(&name) || !cgpanel::runtime(text(&v, "runtime")) {
                 return Err(bad("Invalid application name or runtime"));
             }
+            if v.get("container_port").is_some()
+                && !v["container_port"]
+                    .as_u64()
+                    .is_some_and(|p| (1..=65535).contains(&p))
+            {
+                return Err(bad("Application port must be 1–65535"));
+            }
             let command = text(&v, "command");
             if command.len() > 2000 {
                 return Err(bad("Start command is too long"));
             }
             let mode = text(&v, "mode");
-            if !["web", "worker"].contains(&mode) {
-                return Err(bad("Application mode must be web or worker"));
+            if !["web", "worker", "private"].contains(&mode) {
+                return Err(bad("Application mode must be web, private or worker"));
             }
             "create_app"
         }
@@ -917,7 +939,6 @@ async fn main() -> anyhow::Result<()> {
         db,
         agent: std::env::var("CGPANEL_AGENT_SOCKET").unwrap_or("/run/cgpanel/agent.sock".into()),
         secure: std::env::var("CGPANEL_INSECURE_LOCAL").unwrap_or_default() != "1",
-        limits: Default::default(),
         writes: Default::default(),
     };
     v2::start(app.clone())
@@ -932,6 +953,9 @@ async fn main() -> anyhow::Result<()> {
         .merge(v4::routes())
         .merge(v5::routes())
         .merge(mfa::routes())
+        .merge(login_security::routes())
+        .merge(mcp::routes())
+        .merge(database_admin::routes())
         .merge(mail::routes())
         .merge(protection::routes())
         .merge(monitoring::routes())
@@ -951,6 +975,8 @@ async fn main() -> anyhow::Result<()> {
     let router = Router::new()
         .merge(monitoring::public_routes())
         .merge(protection::public_routes())
+        .merge(login_security::public_routes())
+        .merge(mcp::public_routes())
         .route(
             "/",
             get(|| async { Html(include_str!("../web/index.html")) }),

@@ -3,12 +3,16 @@
 import ipaddress,json,os,pathlib,re,shutil,subprocess,sys
 root=pathlib.Path(sys.argv[1]).resolve();assert os.geteuid()==0
 def run(*args,**kw):return subprocess.run(args,check=True,**kw)
-packages=['libnginx-mod-http-modsecurity','vsftpd','bubblewrap','e2fsprogs','util-linux']
+packages=['libnginx-mod-http-modsecurity','vsftpd','bubblewrap','e2fsprogs','util-linux','python3-pymysql','python3-psycopg2','python3-sqlparse','postfix','dovecot-core','dovecot-imapd','dovecot-lmtpd','rspamd','redis-server']
 missing=[p for p in packages if subprocess.run(['dpkg-query','-W','-f=${Status}',p],capture_output=True,text=True).stdout!='install ok installed']
 if missing:
+    run('debconf-set-selections',input='postfix postfix/main_mailer_type select Local only\npostfix postfix/mailname string localhost\n',text=True)
     run('apt-get','update',env={**os.environ,'DEBIAN_FRONTEND':'noninteractive'})
     run('apt-get','-o','DPkg::Lock::Timeout=60','install','-y',*missing,env={**os.environ,'DEBIAN_FRONTEND':'noninteractive'})
+if '--dependencies-only' in sys.argv:raise SystemExit(0)
+pathlib.Path('/var/lib/cgpanel-volumes').mkdir(mode=0o700,exist_ok=True)
 lib=pathlib.Path('/usr/local/lib/cgpanel');lib.mkdir(parents=True,exist_ok=True)
+shutil.copy2(root/'deploy/database-query.py',lib/'database-query.py');(lib/'database-query.py').chmod(0o700)
 shutil.copy2(root/'deploy/workspace-volume.py',lib/'workspace-volume.py');(lib/'workspace-volume.py').chmod(0o700)
 shutil.copy2(root/'deploy/reload-nginx',lib/'reload-nginx');(lib/'reload-nginx').chmod(0o755)
 shutil.copytree(root/'deploy/waf/crs',lib/'crs-v4.29.0',dirs_exist_ok=True)
@@ -121,3 +125,10 @@ run('python3',str(root/'deploy/setup-mail.py'))
 shutil.copy2(root/'deploy/mail-config.py',lib/'mail-config.py');(lib/'mail-config.py').chmod(0o700)
 
 run('python3',str(root/'deploy/adopt-sftp.py'))
+
+cache=pathlib.Path('/var/cache/cgpanel-pages');cache.mkdir(mode=0o750,exist_ok=True);shutil.chown(cache,user='www-data',group='www-data')
+pathlib.Path('/etc/nginx/conf.d/04-cgpanel-cache.conf').write_text('''proxy_cache_path /var/cache/cgpanel-pages levels=1:2 keys_zone=cgp_pages:16m max_size=256m inactive=30m use_temp_path=off;
+map "$request_method:$http_authorization:$http_cookie" $cgp_private_request { default 1; "GET::" 0; "HEAD::" 0; }
+map $upstream_http_cache_control $cgp_origin_private { default 1; ~*(^|,)[[:space:]]*(no-store|private|no-cache)([=,[:space:]]|$) 1; ~*(^|,)[[:space:]]*public([,[:space:]]|$) 0; }
+''')
+run('nginx','-t');run('systemctl','reload','nginx')
