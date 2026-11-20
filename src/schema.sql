@@ -79,3 +79,8 @@ CREATE TABLE IF NOT EXISTS oauth_clients(id TEXT PRIMARY KEY,redirects TEXT NOT 
 CREATE TABLE IF NOT EXISTS oauth_codes(hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,client_id TEXT NOT NULL,redirect TEXT NOT NULL,challenge TEXT NOT NULL,scope TEXT NOT NULL,expires INTEGER NOT NULL);
 
 CREATE TABLE IF NOT EXISTS security_alerts(domain_id TEXT PRIMARY KEY,last_sent INTEGER NOT NULL);
+
+CREATE TABLE IF NOT EXISTS account_deletions(user_id TEXT PRIMARY KEY,job_id TEXT NOT NULL,actor TEXT NOT NULL,username TEXT NOT NULL,state TEXT NOT NULL,updated INTEGER NOT NULL,error TEXT NOT NULL DEFAULT '');
+
+CREATE INDEX IF NOT EXISTS analytics_domain_at ON analytics_events(domain_id,at);
+CREATE INDEX IF NOT EXISTS analytics_hotspots ON analytics_events(domain_id,path,kind,viewport,at);

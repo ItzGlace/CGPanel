@@ -31,6 +31,7 @@ with tempfile.TemporaryDirectory(prefix='cgp-analytics-') as folder:
             anonymous.call(endpoint,'POST',event,status=204,headers={**headers,'x-cgpanel-client-ip':'203.0.113.11'})
             anonymous.call(endpoint,'POST',{**event,'kind':'click','x':250,'y':125,'target':'button'},status=204,headers=headers)
             anonymous.call(endpoint,'POST',event,status=204,headers={**headers,'dnt':'1'})
+            anonymous.call(endpoint,'POST',event,status=204,headers={**headers,'sec-gpc':'1'})
             anonymous.call(endpoint,'POST',event,status=403,headers={**headers,'Origin':'https://other.example'})
             anonymous.call(endpoint,'POST',{**event,'key':'wrong'},status=403,headers=headers)
             anonymous.call('/api/v2/analytics/'+rid,status=401)
@@ -39,6 +40,7 @@ with tempfile.TemporaryDirectory(prefix='cgp-analytics-') as folder:
             assert result['pages'][0]['path']=='/page'
             assert result['heatmap']['cells']==[{'col':2,'row':2,'count':1}]
             assert result['referrers'][0]['host']==''
+            assert result['tracking']['enabled'] and result['tracking']['last_event'] and not result['tracking']['automatic']
             with sqlite3.connect(dbfile) as db:
                 rows=db.execute('SELECT visitor,path,referrer FROM analytics_events').fetchall()
                 assert all(len(row[0])==64 and '203.0.113.' not in str(row) and 'secret' not in str(row) for row in rows)

@@ -29,19 +29,21 @@ jobs:
       - run: python3 tests/release_features.py && python3 tests/monitor_alerts.py
       - run: npx playwright install --with-deps chromium
       - run: python3 tests/browser_features.py
-      - run: python3 tests/analytics.py && python3 tests/mfa.py && python3 tests/protection.py
+      - run: python3 tests/accounts.py && python3 tests/analytics.py && python3 tests/mfa.py && python3 tests/protection.py
       - run: python3 tests/sftp_policy.py && python3 tests/firewall_migration.py
       - run: python3 -m py_compile tests/*.py deploy/*.py
       - run: python3 scripts/build_api_docs.py --check
-      - run: bash -n deploy/install.sh deploy/install-features.sh deploy/upgrade-v0.2.sh deploy/reload-nginx
+      - run: bash -n install.sh deploy/cgpanel-setup deploy/debian/postinst deploy/debian/prerm deploy/debian/postrm deploy/install.sh deploy/install-features.sh deploy/upgrade-v0.2.sh deploy/reload-nginx
       - run: docker build -t cgpanel-integration -f tests/host-tools.Dockerfile tests
       - run: docker run --rm -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-integration sh -c 'mkdir -p /run/mysqld && chown mysql:mysql /run/mysqld && python3 tests/host_tools.py'
       - run: docker run --rm -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-integration python3 tests/cache.py
+      - run: docker run --rm --network none -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-integration python3 tests/account_purge.py
       - run: docker run --rm -v /tmp/cgpanel-generated.zone:/generated.zone:ro cgpanel-integration named-checkzone example.com /generated.zone
       - run: docker build -t cgpanel-mail-test -f tests/mail-tools.Dockerfile tests
       - run: docker run --rm --network none --add-host mail.cgpanel.test:127.0.0.1 -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-mail-test python3 tests/mail_protocols.py
       - run: bash tests/build_upgrade_baseline.sh
       - run: docker build -t cgpanel-upgrade-test -f tests/upgrade-tools.Dockerfile tests
+      - run: docker run --rm --network none -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 cgpanel-upgrade-test python3 tests/analytics_nginx.py
       - name: Verify legacy upgrade, preflight failure and rollback
         run: |
           set -e
@@ -58,3 +60,22 @@ jobs:
               -e "CGPANEL_UPGRADE_BUNDLE=/candidate/upgrade-package/bundle/CGPanel-v$version-linux-x86_64.tar.gz" \
               cgpanel-upgrade-test python3 tests/upgrade.py "$scenario"
           done
+      - run: docker build -t cgpanel-package-test -f tests/package-tools.Dockerfile tests
+      - name: Verify signed APT package and package upgrade
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/upgrade-package" python3 scripts/package_deb.py "$GITHUB_WORKSPACE/target/upgrade-package/bundle"
+          export GNUPGHOME="$RUNNER_TEMP/cgpanel-test-signing"
+          install -d -m 0700 "$GNUPGHOME"
+          trap 'rm -rf -- "$GNUPGHOME"' EXIT
+          gpg --batch --pinentry-mode loopback --passphrase '' --quick-generate-key 'CGPanel ephemeral package test' ed25519 sign 1d
+          fingerprint=$(gpg --batch --with-colons --list-keys | awk -F: '$1=="fpr" {print $10; exit}')
+          python3 scripts/build_apt_repository.py "$GITHUB_WORKSPACE/target/upgrade-package/bundle/cgpanel_${version}_amd64.deb" "$GITHUB_WORKSPACE/target/apt-test" --key "$fingerprint"
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/project:ro" -e CGPANEL_DISPOSABLE_TEST=1 -e CGPANEL_APT_TEST_REPOSITORY=/project/target/apt-test cgpanel-package-test python3 tests/apt_package.py
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/project:ro" -v "$GITHUB_WORKSPACE/target:/candidate:ro" \
+            -e CGPANEL_DISPOSABLE_TEST=1 -e CGPANEL_UPGRADE_LEGACY_BINARY=/candidate/upgrade-baseline-cgpanel \
+            -e CGPANEL_UPGRADE_NEW_BIN_DIR=/candidate/debug -e "CGPANEL_UPGRADE_NEW_VERSION=$version" \
+            -e "CGPANEL_UPGRADE_BUNDLE=/candidate/upgrade-package/bundle/CGPanel-v$version-linux-x86_64.tar.gz" \
+            -e "CGPANEL_UPGRADE_DEB=/candidate/upgrade-package/bundle/cgpanel_${version}_amd64.deb" \
+            cgpanel-package-test python3 tests/upgrade.py package

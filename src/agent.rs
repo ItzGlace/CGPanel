@@ -10,6 +10,7 @@ mod mail_agent;
 mod performance_agent;
 mod protection_agent;
 mod resources_agent;
+mod retirement_agent;
 mod security_agent;
 mod services_agent;
 mod tls_agent;
@@ -885,6 +886,11 @@ async fn create_database(reg: &mut Registry, op: &Operation) -> Result<Value> {
     )
 }
 async fn execute(reg: &mut Registry, mut op: Operation) -> Result<Value> {
+    ensure!(
+        !reg.items.contains_key(&format!("retire_{}", op.tenant))
+            || op.action == "tenant_delete_preview",
+        "This account is being permanently deleted"
+    );
     if op.action == "create_app" {
         op.data = cgpanel::application_input(&op.data);
     }
@@ -910,6 +916,8 @@ async fn execute(reg: &mut Registry, mut op: Operation) -> Result<Value> {
         "services_status" => services_agent::status(reg, &op).await,
         "services_configure" => services_agent::configure(reg, &op).await,
         "protection_configure" => protection_agent::configure(reg, &op).await,
+        "tenant_delete_preview" => retirement_agent::preview(&op).await,
+        "domain_analytics" => tls_agent::analytics_configure(reg, &op).await,
         "protection_stats" => protection_agent::stats(reg, &op).await,
         "workspace_files" => workspace_agent::files(reg, &op).await,
         "workspace_git" => workspace_agent::git(reg, &op).await,
@@ -1056,7 +1064,7 @@ async fn execute(reg: &mut Registry, mut op: Operation) -> Result<Value> {
         "create_database" => create_database(reg, &op).await,
         "monitor_security" => security_agent::status(reg, &op).await,
         "monitor_email" => security_agent::send_email(reg, &op).await,
-        "database_query" => database_agent::query(reg, &op).await,
+        "database_query" | "database_studio" => database_agent::query(reg, &op).await,
         "database_access" => {
             let item = owned(reg, &op, "databases")?.clone();
             let ips = exact_ips(&op.data["allowed_ips"])?;
@@ -1502,6 +1510,7 @@ async fn main() -> Result<()> {
                 return;
             }
             let result = match serde_json::from_str::<Operation>(&line) {
+                Ok(op) if op.action == "tenant_delete" => retirement_agent::purge(&reg, op).await,
                 Ok(op) if op.action == "console_stream" => {
                     static SLOTS: std::sync::LazyLock<tokio::sync::Semaphore> =
                         std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(16));
@@ -1546,6 +1555,10 @@ async fn main() -> Result<()> {
                         "ide_status",
                         "ide_password",
                         "update_status",
+                        "database_query",
+                        "database_studio",
+                        "health",
+                        "tenant_delete_preview",
                     ]
                     .contains(&op.action.as_str()) =>
                 {

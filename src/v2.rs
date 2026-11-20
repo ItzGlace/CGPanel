@@ -178,6 +178,7 @@ async fn retry(
         .bind(&rid).bind(&user.id).bind(&user.role).fetch_optional(&app.db).await?.ok_or_else(|| bad("Failed job not found"))?;
     let kind: String = r.get("kind");
     if [
+        "account_delete",
         "restore_full",
         "tls",
         "panel_tls",
@@ -294,6 +295,7 @@ pub async fn start(app: App) -> Result<(), Error> {
     Ok(())
 }
 async fn run_one(app: &App, alerts: bool) -> Result<(), Error> {
+    let claim = app.writes.lock().await;
     let Some(row) = sqlx::query("SELECT j.* FROM jobs j JOIN users u ON u.id=j.owner WHERE j.status='queued' AND (j.kind IN ('monitor_alert','monitor_email'))=? AND u.enabled=1 ORDER BY j.created LIMIT 1").bind(alerts).fetch_optional(&app.db).await? else { return Ok(()); };
     let rid: String = row.get("id");
     let owner: String = row.get("owner");
@@ -304,6 +306,7 @@ async fn run_one(app: &App, alerts: bool) -> Result<(), Error> {
         .bind(&rid)
         .execute(&app.db)
         .await?;
+    drop(claim);
     let mut data: Value =
         serde_json::from_str(&row.get::<String, _>("payload")).unwrap_or(json!({}));
     data["job_id"] = json!(rid);
@@ -322,17 +325,21 @@ async fn run_one(app: &App, alerts: bool) -> Result<(), Error> {
         "monitor_email" => "monitor_email",
         _ => "invalid_job",
     };
-    let result = cgpanel::agent_call_timeout(
-        &app.agent,
-        Operation {
-            action: action.into(),
-            tenant: owner,
-            id: target,
-            data,
-        },
-        3600,
-    )
-    .await;
+    let result = if kind == "account_delete" {
+        accounts::run(app, &rid, &target, data).await
+    } else {
+        cgpanel::agent_call_timeout(
+            &app.agent,
+            Operation {
+                action: action.into(),
+                tenant: owner,
+                id: target,
+                data,
+            },
+            3600,
+        )
+        .await
+    };
     let (status, result, error) = match result {
         Ok(value) => ("succeeded", value, String::new()),
         Err(error) => (

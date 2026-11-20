@@ -58,6 +58,7 @@ async fn set_budget(
         return Err(bad("User not found"));
     }
     let _guard = app.writes.lock().await;
+    accounts::ensure_active(&app, &uid).await?;
     Ok(Json(
         host(&app, &user, "budget_configure", &uid, &uid, value).await?,
     ))

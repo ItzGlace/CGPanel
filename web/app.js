@@ -1,3 +1,4 @@
+import { databaseWorkspace, formatStorage } from "/database-studio.js";
 import { navIcon } from "/nav-icons.js";
 import { mailPanel } from "/mail.js";
 import { workspaceTools } from "/workspace.js";
@@ -21,6 +22,7 @@ let me,
   resources = {},
   csrf = "",
   pending = false;
+const studioRender=databaseWorkspace({api,esc,modal,toast});
 const tools4 = workspaceTools({api,esc,glyph,toast,getCurrent:()=>current,getMe:()=>me});
 const pages = {
   mcp: ["AI connections · MCP", "Connect Claude, ChatGPT and compatible clients securely.", "terminal"],
@@ -542,7 +544,7 @@ async function resourcePage(kind) {
   const cols = {
     apps: ["Application", "Runtime / mode", "Owner", "Actions"],
     domains: ["Domain", "Application", "Owner", "Actions"],
-    databases: ["Database", "Engine / port", "Allowed IPs", "Actions"],
+    databases: ["Database", "Engine / port", "Storage", "Allowed IPs", "Actions"],
     dns: ["Record", "Type / TTL", "Value", "Actions"],
     schedules: ["Task", "Schedule", "Application", "Actions"],
     backups: ["Snapshot", "Size", "Created", "Actions"],
@@ -582,6 +584,7 @@ async function resourcePage(kind) {
         cells = [
           `<b>${esc(r.name)}</b><small>${esc(d.database)}</small>`,
           `${esc(d.engine)} / ${esc(d.port)}`,
+          `<span data-database-size="${r.id}" aria-live="polite">Loading…</span>`,
           esc((d.allowed_ips || []).join(", ") || "Local only"),
         ];
         actions = [["access", "Access rules"]];
@@ -616,14 +619,14 @@ async function resourcePage(kind) {
     })
     .join("")}</tbody></table></div>`;
   $("#content").innerHTML = html;
+  if(kind==='databases'){
+    const content=$('#content');const queue=[...rows];
+    const worker=async()=>{while(queue.length){const r=queue.shift(),el=content.querySelector('[data-database-size="'+r.id+'"]');try{const value=await api('/databases/'+r.id+'/size');if(!el?.isConnected)return;el.textContent=formatStorage(value.bytes);el.title=Number(value.bytes).toLocaleString()+' bytes'+(value.estimated?' · engine estimate':' · includes database overhead');}catch(error){if(el?.isConnected){el.textContent='Unavailable';el.title=error.message;}}}};
+    await Promise.all(Array.from({length:Math.min(3,rows.length)},worker));
+  }
 }
-function formatSize(n) {
-  return !n
-    ? "—"
-    : n > 1048576
-      ? (n / 1048576).toFixed(1) + " MB"
-      : (n / 1024).toFixed(1) + " KB";
-}
+function formatSize(n) { return n==null?"—":formatStorage(n); }
+
 const input = (name, label, type = "text", help = "", value = "") =>
   `<label class="grid gap-2 text-xs font-medium text-slate-700">${label}<input class="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" name="${name}" type="${type}" value="${esc(value)}" ${type === "password" ? 'autocomplete="new-password"' : ""} required>${help ? `<small class="text-xs font-normal leading-6 text-slate-500">${help}</small>` : ""}</label>`;
 const textarea = (name, label, help = "", value = "") =>
@@ -645,6 +648,7 @@ function modal(title, fields, submit, handler) {
   $("#dialog-error").textContent = "";
   $("#dialog-submit").textContent = submit;
   $("#dialog-submit").hidden = !handler;
+  $("#dialog-submit").disabled = false;
   $("#cancel-dialog").textContent = handler ? "Cancel" : "Close";
   $("#dialog-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -864,7 +868,7 @@ async function create(kind = current) {
 $("#page-action").onclick = () => create();
 document.addEventListener("click", async (e) => {
   const b = e.target.closest(
-    "[data-create],[data-delete],[data-action],[data-user]",
+    "[data-create],[data-delete],[data-action],[data-user],[data-user-delete]",
   );
   if (!b) return;
   if (b.hasAttribute("data-create")) return create(b.dataset.create || current);
@@ -882,6 +886,7 @@ document.addEventListener("click", async (e) => {
     );
     return;
   }
+  if (b.dataset.userDelete) {try{await deleteUser(b.dataset.userDelete);}catch(error){toast(error.message);}return;}
   if (b.dataset.user) return editUser(b.dataset.user);
   if (b.dataset.action) {
     const action = b.dataset.action,
@@ -1077,7 +1082,15 @@ async function workspace(mode) {
 async function usersPage() {
   userList = await api("/users");
   $("#content").innerHTML =
-    `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">Tenants cannot become administrators, obtain host root, or access another tenant’s resources. Account suspension revokes panel sessions; running workloads remain online.</div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs table-wrap overflow-x-auto"><table class="data-table w-full border-collapse whitespace-nowrap text-left [&_th]:bg-slate-50/70 [&_th]:px-5 [&_th]:py-3.5 [&_th]:text-[9px] [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-slate-400 [&_td]:border-t [&_td]:border-slate-100 [&_td]:px-5 [&_td]:py-5 [&_td]:text-xs [&_td_small]:mt-1 [&_td_small]:block [&_td_small]:max-w-48 [&_td_small]:truncate [&_td_small]:text-[10px] [&_td_small]:text-slate-400 [&_tbody_tr]:transition [&_tbody_tr:hover]:bg-slate-50/50"><thead><tr><th>Account</th><th>Role</th><th>State</th><th>Quota / type</th><th>Panel access</th><th>Actions</th></tr></thead><tbody>${userList.map((u) => `<tr><td><b>${esc(u.username)}</b><small>${u.id.slice(0, 12)}</small></td><td>${esc(u.role)}</td><td><span class="pill inline-flex items-center rounded-md border border-emerald-100 bg-emerald-50/70 px-2 py-1 text-[10px] font-medium text-emerald-700">${u.enabled ? "Enabled" : "Suspended"}</span></td><td>${u.quota}</td><td>${esc(u.allowed_ips.join(", ") || "Any source IP")}</td><td>${u.role === "admin" ? "—" : `<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" data-user="${u.id}">Manage access</button> <button data-budget="${u.id}" class="rounded-lg border border-slate-200 px-3 py-2.5 text-xs">Resource budget</button>`}</td></tr>`).join("")}</tbody></table></div>`;
+    `<div class="info-box mb-5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4 text-xs leading-6 text-emerald-900/65">Tenants cannot become administrators, obtain host root, or access another tenant’s resources. Account suspension revokes panel sessions; running workloads remain online.</div><div class="card mb-5 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-xs table-wrap overflow-x-auto"><table class="data-table w-full border-collapse whitespace-nowrap text-left [&_th]:bg-slate-50/70 [&_th]:px-5 [&_th]:py-3.5 [&_th]:text-[9px] [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-slate-400 [&_td]:border-t [&_td]:border-slate-100 [&_td]:px-5 [&_td]:py-5 [&_td]:text-xs [&_td_small]:mt-1 [&_td_small]:block [&_td_small]:max-w-48 [&_td_small]:truncate [&_td_small]:text-[10px] [&_td_small]:text-slate-400 [&_tbody_tr]:transition [&_tbody_tr:hover]:bg-slate-50/50"><thead><tr><th>Account</th><th>Role</th><th>State</th><th>Quota / type</th><th>Panel access</th><th>Actions</th></tr></thead><tbody>${userList.map((u) => `<tr><td><b>${esc(u.username)}</b><small>${u.id.slice(0, 12)}</small></td><td>${esc(u.role)}</td><td><span class="pill inline-flex items-center rounded-md border border-emerald-100 bg-emerald-50/70 px-2 py-1 text-[10px] font-medium text-emerald-700">${u.deletion_state?"Deletion "+esc(u.deletion_state):u.enabled ? "Enabled" : "Suspended"}</span></td><td>${u.quota}</td><td>${esc(u.allowed_ips.join(", ") || "Any source IP")}</td><td>${u.role === "admin" ? "—" : `<button class="secondary inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 transition motion-reduce:transition-none hover:border-emerald-200 hover:bg-emerald-50/50 disabled:opacity-50" data-user="${u.id}" ${u.deletion_state?"disabled":""}>Manage access</button> <button data-budget="${u.id}" ${u.deletion_state?"disabled":""} class="rounded-lg border border-slate-200 px-3 py-2.5 text-xs">Resource budget</button> <button data-user-delete="${u.id}" class="rounded-lg border border-red-200 px-3 py-2.5 text-xs text-red-700">Delete permanently</button>`}</td></tr>`).join("")}</tbody></table></div>`;
+}
+async function deleteUser(id){
+ const user=userList.find(u=>u.id===id),preview=await api('/users/'+id+'/deletion');
+ const counts=Object.entries(preview.counts||{}).map(([kind,count])=>`<li>${esc(kind)}: ${count}</li>`).join('');
+ modal('Permanently delete '+user.username,`<p class="mb-4 text-sm text-red-700">This stops this account’s services and permanently erases its data. This cannot be undone.</p><ul class="mb-4 text-sm">${counts}</ul><p class="mb-4 text-xs">${esc(preview.scope||'')}</p><p class="mb-4 break-all text-xs">Domains: ${esc((preview.domains||[]).join(', ')||'None')}</p>${preview.deletion?.error?`<p class="mb-4 text-sm text-red-700">Previous attempt: ${esc(preview.deletion.error)}</p>`:""}${(preview.blockers||[]).map(b=>`<p class="mb-2 text-sm text-red-700">${esc(b)}</p>`).join('')}`+input('confirm_username','Type '+user.username)+`<label class="flex items-start gap-3 text-sm"><input name="purge_data" type="checkbox" required> I understand all local files, databases, mail and backups belonging to this account will be permanently erased.</label>`,'Delete permanently',async v=>{
+  const job=await api('/users/'+id,'DELETE',{confirm_username:v.confirm_username,purge_data:v.purge_data==='on',fingerprint:preview.fingerprint});$('#dialog').close();toast('Account suspended. Permanent deletion queued; follow job '+job.id.slice(0,12)+'.');location.hash='jobs';
+ });
+ if(preview.blockers?.length || ['queued','running'].includes(preview.deletion?.state)){$('#dialog form button[type="submit"]').disabled=true;}
 }
 function editUser(id) {
   const u = userList.find((x) => x.id === id);
@@ -1225,14 +1238,4 @@ async function mcpPage(){
   const box=document.createElement('section');box.className='mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-6';box.innerHTML=`<h2 class="text-lg font-semibold">Authorize an AI client?</h2><p class="my-3 break-all text-sm">Requested permissions: <b>${esc(oauth.get('scope')||'read')}</b><br>Redirect destination: ${esc(oauth.get('redirect_uri'))}</p><p class="mb-4 text-xs">Approve only if you started this connection in a trusted client. Access lasts one day and can be revoked here.</p><button id="oauth-consent" class="rounded-xl bg-forest px-4 py-3 text-sm text-white">Authorize this account</button><a href="#mcp" class="ml-4 text-sm">Cancel</a>`;$('#content').prepend(box);$('#oauth-consent').onclick=async()=>{try{const response=await api('/mcp/authorize','POST',Object.fromEntries(oauth));location.assign(response.redirect)}catch(e){toast(e.message)}};
  }
 }
-async function databaseStudio(){
- const databases=await api('/resources/databases');if(!databases.length){$('#content').textContent='Create a database first.';return}
- const chosen=sessionStorage.getItem('cgp-studio');let db=databases.find(d=>d.id===chosen)||databases[0];
- $('#content').innerHTML=`<section class="rounded-2xl border border-slate-200 bg-white p-6"><div class="flex flex-wrap items-center gap-3"><select id="studio-db" class="max-w-full rounded-xl border border-slate-200 p-3 text-sm">${databases.map(d=>`<option value="${d.id}" ${d.id===db.id?'selected':''}>${esc(d.name)} · ${esc(d.data.engine)}</option>`).join('')}</select><button id="studio-tables" class="rounded-xl border border-slate-200 p-3 text-sm">List tables</button><button id="studio-schema" class="rounded-xl border border-slate-200 p-3 text-sm">Schema</button><a href="#docs" class="text-sm text-emerald-700">Database guide</a></div><p class="my-4 text-xs leading-6 text-slate-500">SQL runs as this database’s own role. You can browse, create tables, change schemas, insert, update and delete rows. Back up before writes. Results are limited to 500 rows / 1 MiB; a truncated statement is rolled back. Use a database client for large imports and complete SQL exports.</p><form id="studio-form" class="grid gap-4"><textarea id="studio-sql" aria-label="SQL query" spellcheck="false" class="h-44 w-full rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-sm">SELECT 1;</textarea><div class="flex gap-3"><button id="studio-run" class="rounded-xl bg-forest px-5 py-3 text-sm text-white">Execute SQL</button><button type="button" id="studio-export" class="rounded-xl border border-slate-200 p-3 text-sm" disabled>Export result as CSV</button></div></form><div id="studio-result" class="mt-6 overflow-auto text-sm" role="status"></div></section>`;
- let result;const execute=async()=>{const button=$('#studio-run');button.disabled=true;try{result=await api('/databases/'+db.id+'/query','POST',{sql:$('#studio-sql').value});$('#studio-result').innerHTML=`<p class="mb-3 text-xs text-slate-500">${result.truncated?'Result truncated; transaction rolled back.':result.affected+' affected / returned rows'}</p><table class="w-full text-left text-xs"><thead><tr>${result.columns.map(v=>`<th class="border-b p-3">${esc(v)}</th>`).join('')}</tr></thead><tbody>${result.rows.map(row=>`<tr>${row.map(v=>`<td class="max-w-80 break-words border-b p-3">${v===null?'NULL':esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;$('#studio-export').disabled=!result.columns.length}catch(e){$('#studio-result').textContent=e.message}finally{button.disabled=false}};
- $('#studio-db').onchange=async e=>{sessionStorage.setItem('cgp-studio',e.target.value);await databaseStudio()};
- $('#studio-form').onsubmit=async e=>{e.preventDefault();if(!/^\s*(select|show|describe|explain)\b/i.test($('#studio-sql').value)&&!confirm('Execute this SQL? It can permanently change database data or schema.'))return;await execute()};
- $('#studio-tables').onclick=()=>{$('#studio-sql').value=db.data.engine==='mysql'?'SHOW TABLES;':"SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name;";execute()};
- $('#studio-schema').onclick=()=>{$('#studio-sql').value="SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema="+(db.data.engine==='mysql'?"DATABASE()":"'public'")+" ORDER BY table_name,ordinal_position;";execute()};
- $('#studio-export').onclick=()=>{if(!result)return;const quote=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const csv=[result.columns,...result.rows].map(row=>row.map(quote).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));const a=document.createElement('a');a.href=url;a.download='database-result.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
-}
+async function databaseStudio(){ await studioRender(); }

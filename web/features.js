@@ -193,6 +193,8 @@ export function features(ctx) {
         input("email_from","Alert sender mailbox","email","Enabled mailbox on this domain; leave blank for no email alerts.",c.email_from||'').replace(' required','') +
         input("email_to","Alert recipient","email","One address. Delivery uses the server mail service.",c.email_to||'').replace(' required','') +
         checkbox("analytics", "Enable visitor analytics", c.analytics) +
+        checkbox("automatic_tracking", "Automatically add the tracker to HTML pages", c.automatic_tracking) +
+        '<p class="text-xs leading-6 text-slate-500">Automatic tracking covers HTML pages and application navigation served through this domain. Enable it only when your consent policy permits immediate analytics. Use manual setup for consent-gated tracking. Compressed responses, CSP restrictions and CDN caches can require site changes or a cache purge.</p>' +
         checkbox("clicks", "Enable click tracking", c.clicks) +
         input(
           "retention_days",
@@ -209,16 +211,25 @@ export function features(ctx) {
           security: v.security === "on",
           request_threshold:Number(v.request_threshold),
           analytics: v.analytics === "on",
+          automatic_tracking: v.automatic_tracking === "on",
           clicks: v.clicks === "on",
           interval: Number(v.interval),
           retention_days: Number(v.retention_days),
         });
         close();
-        await render("monitoring");
+        await render(getCurrent());
       },
     );
   }
+  async function trackingConfig(id){
+    const {settings}=await api('/v2/monitor/'+id),config=settings.config;
+    modal('Visitor analytics setup',checkbox('analytics','Enable visitor analytics',config.analytics)+checkbox('automatic_tracking','Automatically install on HTML pages',config.automatic_tracking)+checkbox('clicks','Collect click and pointer hotspots',config.clicks)+input('retention_days','Keep analytics for days','number','1–30 days.',config.retention_days||30)+'<p class="text-xs leading-6 text-slate-500">Automatic installation covers HTML pages served through this domain, including application navigation. Enable it when your consent policy permits immediate analytics. For consent-gated sites, keep automatic installation off and use the script from Tracking setup after consent. Do Not Track and Global Privacy Control are respected.</p>','Save tracking',async value=>{
+      await api('/v2/monitor/'+id,'POST',{scheme:'https',path:'/',...config,enabled:settings.enabled,analytics:value.analytics==='on',automatic_tracking:value.automatic_tracking==='on',clicks:value.clicks==='on',retention_days:Number(value.retention_days)});close();await render(getCurrent());
+    });
+  }
+  let analyticsRevision=0;
   async function analytics() {
+    const revision=++analyticsRevision;
     domains = await api("/resources/domains");
     if (!domains.length) {
       panel().innerHTML = note("Assign a domain before collecting analytics.");
@@ -237,6 +248,7 @@ export function features(ctx) {
       ),
       api("/v2/monitor/" + selected),
     ]);
+    if(revision!==analyticsRevision || getCurrent()!=="analytics")return;
     const today = new Date().toISOString().slice(0, 10),
       now = data.daily.find((d) => d.day === today),
       max = Math.max(1, ...data.daily.map((d) => d.views));
@@ -260,25 +272,28 @@ export function features(ctx) {
           (c) => c.col === i % 10 && c.row === Math.floor(i / 10),
         ),
         count = cell?.count || 0;
-      return `<div class="aspect-[2/1] rounded-sm ${colors[count ? Math.max(1, Math.ceil((count / maxClicks) * 5)) : 0]}" title="${count} clicks" aria-label="Row ${Math.floor(i / 10) + 1}, column ${(i % 10) + 1}: ${count} clicks"></div>`;
+      return `<div class="aspect-[2/1] rounded-sm ${colors[count ? Math.max(1, Math.ceil((count / maxClicks) * 5)) : 0]}" title="${count} samples" aria-label="Row ${Math.floor(i / 10) + 1}, column ${(i % 10) + 1}: ${count} samples"></div>`;
     }).join("");
     const snippet = `<script defer data-pointer="true" src="/__cgpanel/tracker.js" data-site="${selected}" data-key="${monitor.settings.analytics_key || "ENABLE_ANALYTICS_FIRST"}"></script>`;
     panel().innerHTML =
       toolbar(
         chooser,
+        button("Configure tracking", "analytics-config", selected) +
         button("Tracking setup", "tracking-setup", selected) +
+        button("Refresh", "refresh", selected) +
           button("Run SEO check", "seo", selected, true),
       ) +
-      `<div class="grid gap-4 sm:grid-cols-3">${card("Page views · today", `<p class="text-3xl font-medium text-forest">${now?.views || 0}</p>`)}${card("Unique IPs · today", `<p class="text-3xl font-medium text-forest">${now?.unique_ips || 0}</p>`)}${card("Clicks · selected page", `<p class="text-3xl font-medium text-forest">${data.heatmap.cells.reduce((a, c) => a + c.count, 0)}</p>`)}</div>` +
+      note(!data.tracking?.enabled ? "Tracking is disabled for this website. Choose Configure tracking, enable visitor analytics and select automatic or manual installation." : data.tracking.last_event ? "Tracking is receiving events. Last event: " + new Date(data.tracking.last_event*1000).toLocaleString() + (data.tracking.automatic ? " · Automatic installation enabled." : " · Manual installation.") : "Tracking is enabled, but no events have arrived. " + (data.tracking.automatic ? "Visit a public HTML page on this domain, then refresh. If it remains empty, check your CDN cache, content security policy and browser privacy settings." : "Install the script from Tracking setup on your website, or select automatic installation in Configure tracking.")) +
+      `<div class="grid gap-4 sm:grid-cols-3">${card("Page views · today", `<p class="text-3xl font-medium text-forest">${now?.views || 0}</p>`)}${card("Unique IPs · today", `<p class="text-3xl font-medium text-forest">${now?.unique_ips || 0}</p>`)}${card((data.heatmap.kind==='move'?"Pointer samples":"Clicks")+" · selected page", `<p class="text-3xl font-medium text-forest">${data.heatmap.cells.reduce((a, c) => a + c.count, 0)}</p>`)}</div>` +
       card(
         "Page views · last 30 days",
         data.daily.length
           ? `<svg viewBox="0 0 650 175" role="img" aria-label="Daily page views for the last 30 days" class="w-full"><path d="M30 20V145H630" class="fill-none stroke-slate-200"/>${bars}<text x="35" y="168" class="fill-slate-500 text-[11px]">${data.daily[0].day}</text><text x="555" y="168" class="fill-slate-500 text-[11px]">${data.daily.at(-1).day}</text></svg>`
           : empty(
-              "No visits recorded yet. Add the tracking script to your website.",
+              "No visits recorded yet. Follow the tracking status above to complete setup.",
             ),
       ) +
-      `<div class="grid gap-5 lg:grid-cols-2">${card("Click heatmap", `<div class="mb-4 flex flex-wrap gap-3"><select id="heatmap-path" class="max-w-full rounded-lg border border-slate-200 px-3 py-2 text-xs">${[...new Set([data.heatmap.path, ...data.pages.map((p) => p.path)])].map((p) => `<option value="${esc(p)}" ${p === data.heatmap.path ? "selected" : ""}>${esc(p || "/")}</option>`).join("")}</select><select id="heatmap-viewport" class="rounded-lg border border-slate-200 px-3 py-2 text-xs"><option ${viewport === "desktop" ? "selected" : ""}>desktop</option><option ${viewport === "mobile" ? "selected" : ""}>mobile</option></select></div><label class="mb-4 block text-xs">Hotspot type<select id="heatmap-kind" class="ml-3 rounded-lg border border-slate-200 p-2"><option value="click">Clicks</option><option value="move" ${data.heatmap.kind === "move" ? "selected" : ""}>Mouse movement</option></select></label><div class="grid grid-cols-10 gap-1" role="img" aria-label="Click concentration by relative page position; darker cells mean more clicks">${cells}</div><p class="mt-3 text-xs text-slate-500">Top to bottom of the page · darker means more clicks. Layout changes can shift historical positions.</p>`)}${card(
+      `<div class="grid gap-5 lg:grid-cols-2">${card(data.heatmap.kind==='move'?"Pointer heatmap":"Click heatmap", `<div class="mb-4 flex flex-wrap gap-3"><select id="heatmap-path" class="max-w-full rounded-lg border border-slate-200 px-3 py-2 text-xs">${[...new Set([data.heatmap.path, ...data.pages.map((p) => p.path)])].map((p) => `<option value="${esc(p)}" ${p === data.heatmap.path ? "selected" : ""}>${esc(p || "/")}</option>`).join("")}</select><select id="heatmap-viewport" class="rounded-lg border border-slate-200 px-3 py-2 text-xs"><option ${viewport === "desktop" ? "selected" : ""}>desktop</option><option ${viewport === "mobile" ? "selected" : ""}>mobile</option></select></div><label class="mb-4 block text-xs">Hotspot type<select id="heatmap-kind" class="ml-3 rounded-lg border border-slate-200 p-2"><option value="click">Clicks</option><option value="move" ${data.heatmap.kind === "move" ? "selected" : ""}>Mouse movement</option></select></label><div class="grid grid-cols-10 gap-1" role="img" aria-label="Click concentration by relative page position; darker cells mean more clicks">${cells}</div><p class="mt-3 text-xs text-slate-500">Top to bottom of the page · darker means more clicks. Layout changes can shift historical positions.</p>`)}${card(
         "Most clicked elements",
         data.targets.length
           ? table(
@@ -811,7 +826,7 @@ export function features(ctx) {
                   ),
                   button("Details", "job-details", j.id) +
                     (["failed", "interrupted"].includes(j.status)
-                      ? " " + button("Retry", "job-retry", j.id)
+                      ? j.kind==="account_delete"?' <a href="#users" class="text-xs text-emerald-700 underline">Review deletion in Users</a>':" " + button("Retry", "job-retry", j.id)
                       : ""),
                 ]),
               ),
@@ -858,6 +873,7 @@ export function features(ctx) {
       id = b.dataset.id;
     try {
       if (action === "refresh") await render(getCurrent());
+      if(action==="analytics-config")await trackingConfig(id);
       if (action === "monitor-config") await monitorConfig(id);
       if (action === "tracking-setup")
         modal(

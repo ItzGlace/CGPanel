@@ -8,6 +8,18 @@ pub fn routes() -> Router<App> {
 }
 const DOCS: &[(&str, &str, &str, bool)] = &[
     (
+        "database-workspace",
+        "Database Studio and permanent account deletion",
+        include_str!("../docs/DATABASE-WORKSPACE.md"),
+        false,
+    ),
+    (
+        "installation",
+        "One-line installation and signed APT updates",
+        include_str!("../docs/INSTALLATION.md"),
+        true,
+    ),
+    (
         "release-v6",
         "AI clients, Database Studio and performance",
         include_str!("../docs/V0.6-GUIDE.md"),

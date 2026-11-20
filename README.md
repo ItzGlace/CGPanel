@@ -166,3 +166,7 @@ CGPanel v0.4 adds a folder-based file manager with uploads/downloads and browser
 SFTP upload troubleshooting and administrator checks: [SFTP guide](docs/SFTP.md).
 
 Read the [0.6 guide](docs/V0.6-GUIDE.md) for MCP client setup, login policy, Database Studio, private services, analytics and performance controls.
+
+## Binary and APT installation
+
+See [installation instructions](docs/INSTALLATION.md) for the one-line Ubuntu 24.04 installer, signed APT repository and package upgrades. [Database Studio and account removal](docs/DATABASE-WORKSPACE.md) explains table navigation, storage sizes and permanent deletion.

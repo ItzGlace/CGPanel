@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+if [ "$1" = configure ]; then
+ install -d -m 0755 /etc/cgpanel
+ printf '%s\n' apt > /etc/cgpanel/package-channel
+ if [ -f /var/lib/cgpanel/panel.db ] && [ -f /etc/cgpanel/agent.env ]; then
+  CGPANEL_APT_CONTEXT=1 python3 /usr/share/cgpanel/payload/deploy/apply-release.py /usr/share/cgpanel/payload
+ else
+  echo 'CGPanel binaries installed. Initialize a fresh dedicated Ubuntu 24.04 host with:'
+  echo '  sudo cgpanel-setup --dedicated-host --public-ip YOUR_SERVER_IPV4'
+ fi
+fi

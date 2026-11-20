@@ -7,7 +7,7 @@ from contextlib import closing
 import fcntl,hashlib,http.server,json,os,pathlib,secrets,shutil,signal,socket,sqlite3,subprocess,sys,tarfile,threading,time,urllib.request
 assert os.environ.get('CGPANEL_DISPOSABLE_TEST')=='1','Disposable upgrade container required'
 SOURCE=pathlib.Path(__file__).resolve().parents[1];ROOT=pathlib.Path('/tmp/cgpanel-upgrade-fixture');ROOT.mkdir()
-scenario=sys.argv[1] if len(sys.argv)>1 else 'success';assert scenario in ('success','prepare-failure','setup-failure','snapshot-failure','space-failure','health-failure','interrupted','cancel-preflight')
+scenario=sys.argv[1] if len(sys.argv)>1 else 'success';assert scenario in ('success','package','prepare-failure','setup-failure','snapshot-failure','space-failure','health-failure','interrupted','cancel-preflight')
 legacy=pathlib.Path(os.environ['CGPANEL_UPGRADE_LEGACY_BINARY']);new=pathlib.Path(os.environ['CGPANEL_UPGRADE_NEW_BIN_DIR']);version=os.environ['CGPANEL_UPGRADE_NEW_VERSION']
 def run(*args,**kw):
  result=subprocess.run(args,text=True,capture_output=True,timeout=100,**kw)
@@ -108,14 +108,18 @@ threading.Thread(target=keepalive,daemon=True).start();log=(ROOT/'apply.log').op
 (pathlib.Path('/var/lib/cgpanel-updates')/'status.json').write_text(json.dumps({'state':'installing','available':'v'+version,'installed':'0.5.2'}))
 legacy_check=sqlite3.connect('/var/lib/cgpanel/panel.db')
 with legacy_check:legacy_check.execute("SELECT count(*) FROM jobs WHERE status='running'").fetchone()
-process=subprocess.Popen(['python3',str(payload/'deploy/apply-release.py'),str(payload)],stdout=log,stderr=log)
+if scenario=='package':
+ held.terminate();held.wait();held.stdout.close();(ROOT/'packages-ready').touch()
+ process=subprocess.Popen(['dpkg','--install',os.environ['CGPANEL_UPGRADE_DEB']],stdout=log,stderr=log)
+else:process=subprocess.Popen(['python3',str(payload/'deploy/apply-release.py'),str(payload)],stdout=log,stderr=log)
 try:
  time.sleep(.7)
  if scenario=='space-failure':assert process.poll() is not None,'Low-space preflight did not refuse the update'
- else:assert process.poll() is None,'Installer did not wait for APT'
- assert health()=='0.5.2';assert not (ROOT/'apt.log').exists();assert not list(pathlib.Path('/var/backups').glob('cgpanel-*'))
+ elif scenario!='package':assert process.poll() is None,'Installer did not wait for APT'
+ if scenario!='package':
+  assert health()=='0.5.2';assert not (ROOT/'apt.log').exists();assert not list(pathlib.Path('/var/backups').glob('cgpanel-*'))
  if scenario=='cancel-preflight':process.send_signal(signal.SIGTERM)
- held.terminate();held.wait();held.stdout.close()
+ if scenario!='package':held.terminate();held.wait();held.stdout.close()
  if scenario=='interrupted':
   for _ in range(1000):
    if (ROOT/'configuring.pid').exists():break
@@ -130,7 +134,7 @@ try:
  for _ in range(100):
   try:
    current=health()
-   if current==(version if scenario=='success' else '0.5.2'):break
+   if current==(version if scenario in ('success','package') else '0.5.2'):break
   except OSError:pass
   time.sleep(.03)
  else:raise AssertionError('Panel did not recover after update')
@@ -138,7 +142,7 @@ try:
  assert transcript.exists() and transcript.stat().st_mode&0o777==0o600
  assert not site_errors,site_errors
  with sqlite3.connect('/var/lib/cgpanel/panel.db') as db:assert db.execute('SELECT value FROM fixture_sentinel').fetchone()[0]=='preserve-tenant-data';assert db.execute('SELECT count(*) FROM users').fetchone()[0]==1
- if scenario=='success':
+ if scenario in ('success','package'):
   assert code==0,transcript.read_text()[-5000:];assert pathlib.Path('/etc/cgpanel/version').read_text().strip()==version
   assert (pathlib.Path('/usr/local/lib/cgpanel')/'updater.py').exists()
  else:

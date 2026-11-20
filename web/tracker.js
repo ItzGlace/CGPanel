@@ -5,7 +5,8 @@
     return;
   const site = script.dataset.site,
     key = script.dataset.key;
-  if (!site || !key) return;
+  if (!site || !key || window.__cgpTrackedSites?.has(site)) return;
+  (window.__cgpTrackedSites ||= new Set()).add(site);
   const endpoint = new URL("collect/" + site, script.src).href;
   let sent = 0,
     clicks = 0,

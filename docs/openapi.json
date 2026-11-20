@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "CGPanel Administrator and Management API",
-    "version": "0.6.3",
+    "version": "0.7.0",
     "description": "Community alpha. Session + CSRF or administrator bearer tokens. See docs/API.md for operational boundaries.",
     "license": {
       "name": "AGPL-3.0-or-later",
@@ -1255,6 +1255,81 @@
                 "quota": 20,
                 "allowed_ips": [
                   "203.0.113.0/24"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_users_id",
+        "summary": "Permanently delete an account",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. Exact username and fresh preview fingerprint required. Suspends account immediately, revokes credentials, queues irreversible data erasure. Wait for running jobs; failures retain the suspended account for a reviewed retry. External and server-wide recovery backups are retained.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Queued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm_username": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": "string"
+                  },
+                  "purge_data": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "confirm_username",
+                  "fingerprint",
+                  "purge_data"
                 ]
               }
             }
@@ -4308,6 +4383,249 @@
         }
       }
     },
+    "/api/users/{id}/deletion": {
+      "get": {
+        "operationId": "get_api_users_id_deletion",
+        "summary": "Preview permanent account deletion",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only, non-admin target and full account ID required. Returns resource counts, domains, blockers and fingerprint. No secrets or private broker inventory are returned.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/size": {
+      "get": {
+        "operationId": "get_api_databases_id_size",
+        "summary": "Read database storage size",
+        "tags": [
+          "Databases"
+        ],
+        "description": "Owned database. Size in bytes and table count. MySQL uses summed table/index estimates; PostgreSQL includes total database storage.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/studio": {
+      "post": {
+        "operationId": "post_api_databases_id_studio",
+        "summary": "Operate Database Studio workspace",
+        "tags": [
+          "Databases"
+        ],
+        "description": "Owned database and isolated SQL role. Catalog, 50-row browsing, column structure, row CRUD, table creation, add/rename/drop columns, truncate and drop. Identifiers are quoted; values are parameterized. Update/delete require complete primary key and a row token; stale rows are rejected. Drop/truncate require exact table name confirmation. SQL remains available for advanced operations.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "SessionCookie": [],
+            "CsrfHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. Job submissions return queued, not completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Application errors usually return an error object. Framework/proxy errors may differ. See API guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "catalog",
+                      "table",
+                      "create_table",
+                      "alter_table",
+                      "drop_table",
+                      "truncate",
+                      "insert",
+                      "update",
+                      "delete"
+                    ]
+                  },
+                  "schema": {
+                    "type": "string"
+                  },
+                  "table": {
+                    "type": "string"
+                  },
+                  "columns": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "values": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "key": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "token": {
+                    "type": "string"
+                  },
+                  "confirm": {
+                    "type": "string"
+                  },
+                  "change": {
+                    "type": "string",
+                    "enum": [
+                      "add",
+                      "rename",
+                      "drop"
+                    ]
+                  },
+                  "column": {
+                    "type": "string"
+                  },
+                  "new_name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "type": "integer"
+                  },
+                  "sort": {
+                    "type": "string"
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "asc",
+                      "desc"
+                    ]
+                  }
+                },
+                "required": [
+                  "action"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/databases/{id}/query": {
       "post": {
         "operationId": "post_api_databases_id_query",
@@ -4858,6 +5176,9 @@
             "type": "integer"
           },
           "analytics": {
+            "type": "boolean"
+          },
+          "automatic_tracking": {
             "type": "boolean"
           },
           "clicks": {

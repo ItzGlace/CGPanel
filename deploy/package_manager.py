@@ -36,6 +36,8 @@ def locked_paths(paths=LOCKS):
 def install_packages(packages, *, timeout=1200, locks=LOCKS, poll=2, runner=subprocess.run, log=print):
     if not packages:
         return
+    if os.environ.get("CGPANEL_APT_CONTEXT")=="1":
+        raise RuntimeError("Missing package dependencies in APT context: "+", ".join(packages)+". Repair package dependencies with apt-get -f install; nested APT is forbidden.")
     deadline = time.monotonic() + timeout
     announced = False
 
@@ -82,5 +84,5 @@ def install_packages(packages, *, timeout=1200, locks=LOCKS, poll=2, runner=subp
             raise RuntimeError('apt-get ' + arguments[0] + ' failed (exit ' + str(result.returncode) + '):\n' + output[-6000:])
 
     log('Preparing required packages: ' + ', '.join(packages), flush=True)
-    apt(['update'])
+    apt(['update','-o','APT::Update::Error-Mode=any'])
     apt(['install', '-y', *packages])

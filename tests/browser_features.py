@@ -8,6 +8,7 @@ def main():
  with tempfile.TemporaryDirectory(prefix='cgp-browser-') as directory:
   folder=Path(directory);database=folder/'panel.db';password=secrets.token_urlsafe(24);broker_path=str(folder/'broker.sock')
   broker=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);broker.bind(broker_path);broker.listen(8)
+  studio_rows=[["1","hello"]];studio_tables=["items"];studio_columns=[{"name":"id","type":"integer","primary":True,"auto":True},{"name":"label","type":"text","nullable":True}]
   def serve():
    while True:
     try:connection,_=broker.accept()
@@ -21,6 +22,24 @@ def main():
      if action=='update_status':result={'installed':'0.6.3','config':{'enabled':True},'status':{'state':'current'}}
      if action=='mail_status':result={'settings':{'enabled':False,'hostname':'mail.example.com'},'domains':[],'mailboxes':[],'server_ip':'192.0.2.10'}
      if action=='database_query':result={'columns':['answer'],'rows':[['1']],'affected':1,'truncated':False}
+     if action=='database_studio':
+      operation=data['action'];schema='cgp_'+'d'*20
+      if operation in ('size','catalog'):result={'database':schema,'engine':'mysql','bytes':10485760,'estimated':True,'table_count':len(studio_tables),'tables':[{'schema':schema,'name':table,'type':'BASE TABLE','estimated_rows':len(studio_rows),'bytes':16384} for table in studio_tables]}
+      elif operation=='table':result={'columns':studio_columns,'primary_key':['id'],'rows':[{'values':r,'token':'fixture'} for r in studio_rows],'editable':True,'has_more':False}
+      elif operation=='truncate':
+       if data.get('confirm')!=data['table']:
+        connection.sendall((json.dumps({'ok':False,'error':'Type the exact table name'})+'\n').encode());continue
+       studio_rows.clear();result={'emptied':True}
+      elif operation=='create_table':studio_tables.append(data['table']);result={'created':True}
+      elif operation=='drop_table':
+       if data.get('confirm')!=data['table']:
+        connection.sendall((json.dumps({'ok':False,'error':'Type the exact table name'})+'\n').encode());continue
+       studio_tables.remove(data['table']);result={'dropped':True}
+      elif operation=='insert':studio_rows.append([str(len(studio_rows)+1),data['values'].get('label')]);result={'inserted':True}
+      elif operation=='update':studio_rows[0][1]=data['values'].get('label',studio_rows[0][1]);result={'updated':True}
+      elif operation=='delete':studio_rows.pop(0);result={'deleted':True}
+     if action=='tenant_delete_preview':result={'fingerprint':'f'*64,'blockers':[],'counts':{'apps':1},'domains':['retired.example'],'scope':'Local account data. External backups are retained.'}
+     if action=='tenant_delete':result={'purged':True}
      if action=='budget_status':result={'total':{'memory_mb':4096,'cpu_millis':4000,'disk_mb':8192},'allocated':{'memory_mb':512,'cpu_millis':1000,'disk_mb':1024},'free':{'memory_mb':3584,'cpu_millis':3000,'disk_mb':7168},'applications':[{'id':'c'*32,'limits':{'memory_mb':512,'cpu_millis':1000,'disk_mb':1024},'disk_enforced':True}]}
      connection.sendall((json.dumps({'ok':True,'result':result})+'\n').encode())
   threading.Thread(target=serve,daemon=True).start()
@@ -29,6 +48,7 @@ def main():
   subprocess.run([str(BINARY),'bootstrap'],env=env,check=True,capture_output=True);env.pop('CGPANEL_ADMIN_PASSWORD')
   with sqlite3.connect(database) as db:
    uid=db.execute('SELECT id FROM users').fetchone()[0]
+   db.execute("INSERT INTO users(id,username,password,role) SELECT ?, 'retired_fixture',password,'user' FROM users WHERE id=?",('e'*32,uid))
    for rid,kind,name,data in [('a'*32,'domains','example.com',{}),('b'*32,'domains','www.example.com',{}),('c'*32,'apps','sample',{'runtime':'python','mode':'web','memory_mb':512,'cpu_millis':1000,'disk_mb':1024}),('d'*32,'databases','sample_db',{'engine':'mysql','database':'cgp_'+'d'*20,'port':3306})]:db.execute('INSERT INTO resources(id,owner,kind,name,data) VALUES(?,?,?,?,?)',(rid,uid,kind,name,json.dumps(data)))
   with (folder/'log').open('w') as log:
    process=subprocess.Popen([str(BINARY)],env=env,stdout=log,stderr=log)

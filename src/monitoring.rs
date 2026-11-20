@@ -55,8 +55,11 @@ async fn configure(
     Path(rid): Path<String>,
     Json(value): Json<Value>,
 ) -> Api<Value> {
+    let _guard = app.writes.lock().await;
     let resource = domain_resource(&app, &user, &rid).await?;
-    let config = configuration(&value)?;
+    let mut config = configuration(&value)?;
+    config["automatic_tracking"] =
+        json!(value["automatic_tracking"] == true && config["analytics"] == true);
     if !text(&config, "telegram_id").is_empty() {
         let connections = host(
             &app,
@@ -91,9 +94,33 @@ async fn configure(
             "Supply both a valid sender mailbox and recipient, or leave both blank",
         ));
     }
+    let previous =
+        sqlx::query("SELECT analytics_key,config FROM monitor_settings WHERE domain_id=?")
+            .bind(&rid)
+            .fetch_optional(&app.db)
+            .await?;
+    let key = previous
+        .as_ref()
+        .map(|r| r.get::<String, _>("analytics_key"))
+        .unwrap_or_else(id);
+    let was_automatic = previous
+        .as_ref()
+        .and_then(|r| serde_json::from_str::<Value>(&r.get::<String, _>("config")).ok())
+        .is_some_and(|v| v["automatic_tracking"] == true);
+    if config["automatic_tracking"] == true || was_automatic {
+        host(
+            &app,
+            &user,
+            "domain_analytics",
+            &resource.owner,
+            &rid,
+            json!({"automatic":config["automatic_tracking"],"key":key,"pointer":config["clicks"]}),
+        )
+        .await?;
+    }
     let now = chrono::Utc::now().timestamp();
     sqlx::query("INSERT INTO monitor_settings(domain_id,owner,enabled,config,next_check,analytics_key,salt) VALUES(?,?,?,?,?,?,?) ON CONFLICT(domain_id) DO UPDATE SET enabled=excluded.enabled,config=excluded.config,next_check=excluded.next_check")
-        .bind(&rid).bind(&resource.owner).bind(value["enabled"]==true || config["security"]==true).bind(config.to_string()).bind(now).bind(id()).bind(format!("{}{}",id(),id())).execute(&app.db).await?;
+        .bind(&rid).bind(&resource.owner).bind(value["enabled"]==true || config["security"]==true).bind(config.to_string()).bind(now).bind(key).bind(format!("{}{}",id(),id())).execute(&app.db).await?;
     audit(&app, &user.id, "monitor:configure", &rid).await;
     Ok(Json(json!({"saved":true})))
 }
@@ -146,7 +173,9 @@ async fn collect(
     {
         return Err(forbidden());
     }
-    if headers.get("dnt").is_some_and(|v| v == "1") {
+    if headers.get("dnt").is_some_and(|v| v == "1")
+        || headers.get("sec-gpc").is_some_and(|v| v == "1")
+    {
         return Ok(StatusCode::NO_CONTENT);
     }
     let kind = text(&value, "kind");
@@ -248,12 +277,24 @@ pub(super) async fn analytics(
     };
     let clicks=sqlx::query("SELECT x/100 col,y/50 row,count(*) count FROM analytics_events WHERE domain_id=? AND path=? AND kind=? AND viewport=? AND at>=? GROUP BY col,row")
         .bind(&rid).bind(&page).bind(event_kind).bind(viewport).bind(since).fetch_all(&app.db).await?;
-    let targets=sqlx::query("SELECT target,count(*) count FROM analytics_events WHERE domain_id=? AND path=? AND kind='click' AND at>=? GROUP BY target ORDER BY count DESC LIMIT 15")
-        .bind(&rid).bind(&page).bind(since).fetch_all(&app.db).await?;
+    let targets=sqlx::query("SELECT target,count(*) count FROM analytics_events WHERE domain_id=? AND path=? AND kind='click' AND viewport=? AND at>=? GROUP BY target ORDER BY count DESC LIMIT 15")
+        .bind(&rid).bind(&page).bind(viewport).bind(since).fetch_all(&app.db).await?;
     let referrers=sqlx::query("SELECT referrer,count(*) count FROM analytics_events WHERE domain_id=? AND kind='view' AND at>=? GROUP BY referrer ORDER BY count DESC LIMIT 15")
         .bind(&rid).bind(since).fetch_all(&app.db).await?;
+    let tracking = sqlx::query("SELECT config FROM monitor_settings WHERE domain_id=?")
+        .bind(&rid)
+        .fetch_optional(&app.db)
+        .await?;
+    let config = tracking
+        .and_then(|r| serde_json::from_str::<Value>(&r.get::<String, _>("config")).ok())
+        .unwrap_or(json!({}));
+    let last_event: Option<i64> =
+        sqlx::query_scalar("SELECT max(at) FROM analytics_events WHERE domain_id=?")
+            .bind(&rid)
+            .fetch_one(&app.db)
+            .await?;
     Ok(Json(
-        json!({"daily":daily.iter().map(|r|json!({"day":r.get::<String,_>("day"),"views":r.get::<i64,_>("views"),"unique_ips":r.get::<i64,_>("unique_ips")})).collect::<Vec<_>>(),
+        json!({"tracking":{"enabled":config["analytics"]==true,"automatic":config["automatic_tracking"]==true,"clicks":config["clicks"]==true,"last_event":last_event},"daily":daily.iter().map(|r|json!({"day":r.get::<String,_>("day"),"views":r.get::<i64,_>("views"),"unique_ips":r.get::<i64,_>("unique_ips")})).collect::<Vec<_>>(),
         "pages":pages.iter().map(|r|json!({"path":r.get::<String,_>("path"),"views":r.get::<i64,_>("views"),"unique_ip_days":r.get::<i64,_>("unique_ip_days")})).collect::<Vec<_>>(),
         "heatmap":{"path":page,"viewport":viewport,"kind":event_kind,"columns":10,"rows":20,"cells":clicks.iter().map(|r|json!({"col":r.get::<i64,_>("col"),"row":r.get::<i64,_>("row"),"count":r.get::<i64,_>("count")})).collect::<Vec<_>>()},
         "targets":targets.iter().map(|r|json!({"label":r.get::<String,_>("target"),"count":r.get::<i64,_>("count")})).collect::<Vec<_>>(),

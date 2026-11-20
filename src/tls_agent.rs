@@ -1,15 +1,41 @@
 use super::*;
 const CERTBOT: &str = "/opt/cgpanel-tools/certbot/bin/certbot";
 pub fn telemetry() -> &'static str {
-    "location ^~ /__cgpanel/ { proxy_pass http://127.0.0.1:2082/telemetry/; proxy_set_header Host $host; proxy_set_header X-CGPanel-Client-IP $remote_addr; client_max_body_size 8k; }"
+    "location ^~ /__cgpanel/ { auth_request off; modsecurity off; proxy_cache off; proxy_pass http://127.0.0.1:2082/telemetry/; proxy_set_header Host $host; proxy_set_header X-CGPanel-Client-IP $remote_addr; client_max_body_size 8k; }"
+}
+pub async fn analytics_configure(reg: &mut Registry, op: &Operation) -> Result<Value> {
+    let old = owned(reg, op, "domains")?.clone();
+    let key = s(&op.data, "key");
+    ensure!(
+        key.len() == 32 && key.bytes().all(|b| b.is_ascii_hexdigit()),
+        "Invalid analytics key"
+    );
+    reg.items.get_mut(&op.id).unwrap().data["analytics"] = json!({"automatic":op.data["automatic"]==true,"key":key,"pointer":op.data["pointer"]==true});
+    if let Err(error) = render_domain(reg, &op.id, &reg.items[&op.id]).await {
+        reg.items.insert(op.id.clone(), old.clone());
+        let _ = render_domain(reg, &op.id, &old).await;
+        return Err(error);
+    }
+    Ok(json!({"saved":true}))
 }
 pub async fn render_domain(reg: &Registry, id: &str, item: &Item) -> Result<()> {
     let name = s(&item.data, "name");
     ensure!(cgpanel::domain(name), "Invalid domain");
     let (global, protection, gate) = protection_agent::nginx(id, item)?;
     let app = s(&item.data, "app_id");
+    let tracking = if item.data["analytics"]["automatic"] == true {
+        let key = s(&item.data["analytics"], "key");
+        ensure!(
+            key.len() == 32 && key.bytes().all(|b| b.is_ascii_hexdigit()),
+            "Invalid analytics key"
+        );
+        let pointer = item.data["analytics"]["pointer"] == true;
+        format!("proxy_set_header Accept-Encoding \"\"; sub_filter_once on; sub_filter '</head>' '<script defer src=\"/__cgpanel/tracker.js\" data-site=\"{id}\" data-key=\"{key}\" data-pointer=\"{pointer}\"></script></head>'; sub_filter '</body>' '<script defer src=\"/__cgpanel/tracker.js\" data-site=\"{id}\" data-key=\"{key}\" data-pointer=\"{pointer}\"></script></body>'; ")
+    } else {
+        String::new()
+    };
     let location = if app.is_empty() {
-        format!("root /srv/cgpanel/public/{id}; index index.html; location / {{ {gate} try_files $uri $uri/ =404; }}")
+        format!("root /srv/cgpanel/public/{id}; index index.html; location / {{ {gate} {tracking} try_files $uri $uri/ =404; }}")
     } else {
         let app = reference(reg, app, &item.tenant, "apps")?;
         let port = app.data["port"].as_u64().context("Missing port")?;
@@ -18,7 +44,7 @@ pub async fn render_domain(reg: &Registry, id: &str, item: &Item) -> Result<()> 
         } else {
             ""
         };
-        format!("location / {{ {gate} {cache} proxy_pass http://127.0.0.1:{port}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto $scheme; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $cg_connection; proxy_read_timeout 60s; }}")
+        format!("location / {{ {gate} {tracking} {cache} proxy_pass http://127.0.0.1:{port}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto $scheme; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $cg_connection; proxy_read_timeout 60s; }}")
     };
     let cname = s(&item.data, "cert_name");
     let expected = format!("cgp_{id}");

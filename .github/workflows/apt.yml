@@ -1,0 +1,52 @@
+name: Publish signed APT repository
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Publish release']
+    types: [completed]
+permissions:
+  contents: write
+concurrency:
+  group: cgpanel-apt-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check signing configuration
+        id: signing
+        env:
+          ARCHIVE_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          if [ -n "$ARCHIVE_KEY" ]; then echo 'enabled=true' >> "$GITHUB_OUTPUT"; else echo 'APT_SIGNING_KEY is required to sign future APT releases.' >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Download published stable package
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir package
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern 'cgpanel_*_amd64.deb' --pattern SHA256SUMS --dir package
+          cd package
+          sha256sum --ignore-missing --check SHA256SUMS
+      - name: Sign and publish repository
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          ARCHIVE_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="$RUNNER_TEMP/cgpanel-apt-key"
+          install -d -m 0700 "$GNUPGHOME"
+          trap 'rm -rf -- "$GNUPGHOME"' EXIT
+          printf '%s' "$ARCHIVE_KEY" | gpg --batch --import
+          test "$(gpg --batch --with-colons --list-keys | awk -F: '$1=="fpr" {print $10; exit}')" = A1CFE2796A8924B3D02562BA81BA83CC10B12E2F
+          git fetch origin apt
+          git worktree add --detach "$RUNNER_TEMP/apt-repository" origin/apt
+          python3 scripts/build_apt_repository.py package/cgpanel_*_amd64.deb "$RUNNER_TEMP/apt-repository" --key A1CFE2796A8924B3D02562BA81BA83CC10B12E2F
+          cd "$RUNNER_TEMP/apt-repository"
+          git config user.name 'CGPanel releases'
+          git config user.email 'releases@users.noreply.github.com'
+          git add '*.deb' Packages Packages.gz Release Release.gpg InRelease cgpanel-archive-keyring.gpg
+          git diff --cached --quiet || git commit -m 'Publish latest signed stable APT package'
+          git push origin HEAD:apt

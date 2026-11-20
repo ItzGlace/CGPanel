@@ -44,6 +44,8 @@ status={'state':'checking','checked_at':int(time.time())}
 try:
     config=json.loads(pathlib.Path('/etc/cgpanel/updates.json').read_text())
     if '--auto' in sys.argv and not config.get('enabled',False): raise SystemExit(0)
+    if pathlib.Path('/etc/cgpanel/package-channel').is_file() and pathlib.Path('/etc/cgpanel/package-channel').read_text().strip()=='apt':
+        run('python3','/usr/local/lib/cgpanel/apt-updater.py',*sys.argv[1:]);raise SystemExit(0)
     try: release=json.loads(fetch('https://api.github.com/repos/ItzGlace/CGPanel/releases/latest',2*1024*1024))
     except urllib.error.HTTPError as error:
         if error.code==404:
@@ -87,4 +89,6 @@ try:
     shutil.rmtree(staging)
 except SystemExit: raise
 except Exception as error:
-    status.update(state='failed',error=str(error)[:1000]);write(status);raise
+    if not (pathlib.Path('/etc/cgpanel/package-channel').is_file() and pathlib.Path('/etc/cgpanel/package-channel').read_text().strip()=='apt'):
+        status.update(state='failed',error=str(error)[:1000]);write(status)
+    raise

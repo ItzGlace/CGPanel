@@ -57,7 +57,9 @@ jobs:
       - name: Package and verify
         run: |
           python3 scripts/package_release.py dist
+          python3 scripts/package_deb.py dist
           cd dist
+          sha256sum cgpanel_*.deb >> SHA256SUMS
           sha256sum --check SHA256SUMS
       - name: Publish GitHub release with installable assets
         env:
@@ -70,6 +72,6 @@ jobs:
             if [ "$attempt" -eq 45 ]; then echo 'Previous release is still pending; retry this job after it completes.' >&2; exit 1; fi
             sleep 20
           done
-          gh release create "$RELEASE_TAG" dist/CGPanel-*.tar.gz dist/SHA256SUMS \
+          gh release create "$RELEASE_TAG" dist/CGPanel-*.tar.gz dist/cgpanel_*.deb dist/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
             --title "CGPanel $RELEASE_TAG" --notes-file "docs/RELEASE-$RELEASE_TAG.md"

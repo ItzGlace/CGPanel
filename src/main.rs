@@ -25,6 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
+mod accounts;
 mod admin_api;
 mod database_admin;
 mod documentation;
@@ -384,11 +385,11 @@ async fn users(State(app): State<App>, Extension(user): Extension<Identity>) -> 
         return Err(forbidden());
     }
     let rows = sqlx::query(
-        "SELECT id,username,role,enabled,allowed_ips,quota,created FROM users ORDER BY created",
+        "SELECT id,username,role,enabled,allowed_ips,quota,created,coalesce((SELECT state FROM account_deletions d WHERE d.user_id=users.id),'') deletion_state FROM users ORDER BY created",
     )
     .fetch_all(&app.db)
     .await?;
-    Ok(Json(json!(rows.iter().map(|r|json!({"id":r.get::<String,_>("id"),"username":r.get::<String,_>("username"),"role":r.get::<String,_>("role"),"enabled":r.get::<i64,_>("enabled"),"allowed_ips":serde_json::from_str::<Value>(&r.get::<String,_>("allowed_ips")).unwrap_or(json!([])),"quota":r.get::<i64,_>("quota"),"created":r.get::<String,_>("created")})).collect::<Vec<_>>())))
+    Ok(Json(json!(rows.iter().map(|r|json!({"id":r.get::<String,_>("id"),"username":r.get::<String,_>("username"),"role":r.get::<String,_>("role"),"enabled":r.get::<i64,_>("enabled"),"allowed_ips":serde_json::from_str::<Value>(&r.get::<String,_>("allowed_ips")).unwrap_or(json!([])),"quota":r.get::<i64,_>("quota"),"deletion_state":r.get::<String,_>("deletion_state"),"created":r.get::<String,_>("created")})).collect::<Vec<_>>())))
 }
 async fn create_user(
     State(app): State<App>,
@@ -462,6 +463,7 @@ async fn update_user(
         ));
     }
     let _guard = app.writes.lock().await;
+    accounts::ensure_active(&app, &uid).await?;
     let target = sqlx::query("SELECT role FROM users WHERE id=?")
         .bind(&uid)
         .fetch_optional(&app.db)
@@ -533,7 +535,9 @@ async fn owned(app: &App, user: &Identity, rid: &str) -> Result<Resource, Error>
         .fetch_optional(&app.db)
         .await?
         .ok_or_else(|| Error(StatusCode::NOT_FOUND, "Resource not found".into()))?;
-    Ok(resource(r))
+    let resource = resource(r);
+    accounts::ensure_active(app, &resource.owner).await?;
+    Ok(resource)
 }
 async fn list_resources(
     State(app): State<App>,
@@ -964,6 +968,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/overview", get(overview))
         .route("/users", get(users).post(create_user))
         .route("/users/{id}", post(update_user))
+        .merge(accounts::routes())
         .route("/password", post(change_password))
         .route(
             "/resources/{kind}",
@@ -1051,6 +1056,15 @@ async fn main() -> anyhow::Result<()> {
                 (
                     [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
                     include_str!("../web/workspace.js"),
+                )
+            }),
+        )
+        .route(
+            "/database-studio.js",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("../web/database-studio.js"),
                 )
             }),
         )

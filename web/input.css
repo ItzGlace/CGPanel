@@ -40,3 +40,44 @@
 
 @source "./mail.js";
 @source "./nav-icons.js";
+@source "./database-studio.js";
+
+@layer components {
+  .studio-layout { display:grid; grid-template-columns:16rem minmax(0,1fr); gap:1.25rem; align-items:start; }
+  .studio-card { min-width:0; border:1px solid #e2e8f0; border-radius:1rem; background:#ffffffd9; padding:1.25rem; }
+  .studio-card h2 { font-size:1.1rem; font-weight:600; margin-bottom:.5rem; }
+  .studio-sidebar { position:sticky; top:1rem; max-height:80vh; overflow:auto; }
+  .studio-muted { color:#64748b; font-size:.75rem; line-height:1.7; margin:.5rem 0; }
+  .studio-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem; margin-bottom:1rem; }
+  .studio-toolbar>div:last-child { display:flex; gap:.5rem; flex-wrap:wrap; }
+  .studio-button { cursor:pointer; border:1px solid #cbd5e1; border-radius:.5rem; padding:.55rem .75rem; font-size:.75rem; background:white; color:#334155; }
+  .studio-button:hover { background:#edf9f7; border-color:#69bbb1; }
+  .studio-button:disabled { opacity:.45; cursor:not-allowed; }
+  .studio-primary,.studio-tabs [aria-selected="true"] { background:#32292f; color:white; border-color:#32292f; }
+  .studio-tree-group { margin-top:.75rem; }
+  .studio-tree-group>.studio-button,.studio-tree-group #studio-table-tree .studio-button { display:block; width:100%; text-align:left; margin:.25rem 0; overflow-wrap:anywhere; }
+  .studio-tree-group #studio-table-tree .studio-button { padding-left:1rem; }
+  .studio-tree-group .studio-button[aria-current="true"] { background:#d3f0eb; border-color:#69bbb1; }
+  .studio-button small { display:block; margin-top:.25rem; color:#64748b; font-size:.65rem; }
+  .studio-filter,.studio-field input,.studio-field select,.studio-field textarea,.studio-editor textarea,.studio-editor select,.studio-cell-editor select,.studio-cell-editor textarea,.studio-new-column input:not([type="checkbox"]),.studio-new-column select { display:block; width:100%; min-width:0; border:1px solid #cbd5e1; border-radius:.5rem; background:#f8fafc; padding:.65rem; font-size:.8rem; margin:.4rem 0 .75rem; }
+  .studio-filter { margin:.75rem 0; }
+  .studio-tabs { display:flex; gap:.5rem; flex-wrap:wrap; border-bottom:1px solid #e2e8f0; padding-bottom:1rem; margin-bottom:1rem; }
+  .studio-summary { display:flex; flex-wrap:wrap; gap:1.5rem; padding:1.25rem; margin:1rem 0; border-radius:.75rem; background:#edf9f7; font-size:.85rem; }
+  .studio-table-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(12rem,1fr)); gap:.75rem; margin-top:1rem; }
+  .studio-table-cards .studio-button { text-align:left; padding:1rem; }
+  .studio-scroll { max-width:100%; overflow:auto; max-height:65vh; overscroll-behavior:contain; }
+  .studio-data { width:100%; border-collapse:collapse; font-size:.75rem; }
+  .studio-data th,.studio-data td { text-align:left; vertical-align:top; border-bottom:1px solid #e2e8f0; padding:.75rem; max-width:24rem; overflow-wrap:anywhere; }
+  .studio-data th { background:#f8fafc; position:sticky; top:0; z-index:1; white-space:nowrap; }
+  .studio-data th small { display:block; font-size:.65rem; color:#64748b; font-weight:400; }
+  .studio-data td:first-child { white-space:nowrap; }
+  .studio-data td .studio-button { margin:0 .25rem .25rem 0; }
+  .studio-editor { display:grid; gap:1rem; }
+  .studio-field { display:grid; gap:.25rem; font-size:.8rem; margin-bottom:1rem; }
+  .studio-cell-editor { border:1px solid #e2e8f0; border-radius:.75rem; padding:1rem; margin-bottom:1rem; }
+  .studio-cell-editor legend { font-size:.8rem; font-weight:600; }
+  .studio-cell-editor legend small { color:#64748b; font-weight:400; }
+  .studio-new-column { display:grid; gap:.5rem; grid-template-columns:1fr 1fr; border-bottom:1px solid #e2e8f0; padding:.75rem 0; font-size:.75rem; }
+  .studio-error { color:#be123c; background:#fff1f4; padding:.75rem; border-radius:.5rem; margin:1rem 0; font-size:.8rem; }
+  @media(max-width:900px) { .studio-layout { grid-template-columns:minmax(0,1fr); } .studio-sidebar { position:static; max-height:22rem; } .studio-card { padding:1rem; } }
+}

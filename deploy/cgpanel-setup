@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $EUID == 0 ]] || { echo 'Run as root.' >&2; exit 1; }
+[[ ${1:-} == --dedicated-host && ${2:-} == --public-ip && $# == 3 ]] || { echo 'Usage: cgpanel-setup --dedicated-host --public-ip SERVER_IPV4' >&2; exit 1; }
+[[ ! -e /var/lib/cgpanel/panel.db ]] || { echo 'CGPanel is already configured. Use apt update && apt install --only-upgrade cgpanel.' >&2; exit 1; }
+export CGPANEL_PUBLIC_IP=$3 CGPANEL_SKIP_PACKAGES=1 CGPANEL_PREBUILT=1
+python3 -c 'import ipaddress,os; ipaddress.IPv4Address(os.environ["CGPANEL_PUBLIC_IP"])'
+exec bash /usr/share/cgpanel/payload/deploy/install.sh --dedicated-host

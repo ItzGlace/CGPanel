@@ -12,9 +12,11 @@ if [[ ${CGPANEL_SKIP_PACKAGES:-0} != 1 ]]; then
  apt-get update
  apt-get install -y build-essential pkg-config libssl-dev curl git nginx podman uidmap slirp4netns fuse-overlayfs dbus-user-session mariadb-server postgresql bind9 bind9-utils nftables fail2ban certbot python3-certbot-nginx openssl
 fi
-command -v cargo >/dev/null || { echo 'Install a current stable Rust toolchain, then rerun. See https://rustup.rs'; exit 1; }
 cd "$CG_SOURCE"
+if [[ ${CGPANEL_PREBUILT:-0} != 1 ]]; then
+command -v cargo >/dev/null || { echo 'Install a current stable Rust toolchain, then rerun. See https://rustup.rs'; exit 1; }
 cargo build --release --locked
+fi
 id cgpanel >/dev/null 2>&1 || useradd --system --home /var/lib/cgpanel --shell /usr/sbin/nologin cgpanel
 install -d -m 0750 -o cgpanel -g cgpanel /var/lib/cgpanel
 install -d -m 0755 /usr/local/lib/cgpanel /srv/cgpanel /srv/cgpanel/public /etc/cgpanel /etc/bind/cgpanel

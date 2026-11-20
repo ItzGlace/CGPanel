@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+ echo 'CGPanel package removed. Hosted applications and customer data were retained.'
+ echo 'Dedicated host configuration in /etc/cgpanel, Nginx, DNS and mail remains in place.'
+fi

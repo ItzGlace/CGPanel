@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+if [ "$1" = remove ]; then
+ systemctl disable --now cgpanel cgpanel-agent cgpanel-auto-update.timer 2>/dev/null || true
+ for binary in cgpanel cgpanel-agent cgpanel-workspace cgpanel-egress cgpanel-acme-hook; do
+  if cmp -s "/usr/local/bin/$binary" "/usr/share/cgpanel/payload/bin/$binary"; then rm -f -- "/usr/local/bin/$binary"; fi
+ done
+fi
+# User websites, databases, mail, configuration and backups are deliberately retained.
